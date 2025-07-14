@@ -35,6 +35,27 @@ const chargeSchema = new mongoose.Schema(
     description: {
       type: String,
     },
+    // New fields for details
+    details: {
+      type: Object, // For services extérieurs
+    },
+    ouvriers: [
+      {
+        nom: String,
+        heures: Number,
+        taux: Number,
+        cout: Number,
+      },
+    ],
+    pieces: [
+      {
+        fournisseur: String,
+        piece: String,
+        prix: Number,
+        quantite: Number,
+        total: Number,
+      },
+    ],
   },
   {
     timestamps: true,

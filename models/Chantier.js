@@ -28,6 +28,12 @@ const chantierSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    etat: {
+      type: String,
+      enum: ["en cours", "fermé"],
+      default: "en cours",
+      required: true,
+    },
   },
   {
     timestamps: true,

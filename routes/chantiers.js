@@ -210,4 +210,21 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// Close a chantier (set etat to "fermé")
+router.patch("/:id/close", async (req, res) => {
+  try {
+    const chantier = await Chantier.findByIdAndUpdate(
+      req.params.id,
+      { etat: "fermé" },
+      { new: true }
+    );
+    if (!chantier) {
+      return res.status(404).json({ message: "Chantier non trouvé" });
+    }
+    res.json(chantier);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 module.exports = router;

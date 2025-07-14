@@ -15,6 +15,7 @@ router.get("/chantier/:chantierId", async (req, res) => {
 // Créer une nouvelle charge
 router.post("/", async (req, res) => {
   try {
+    // Optionally, validate structure based on type here
     const charge = new Charge(req.body);
     const savedCharge = await charge.save();
     res.status(201).json(savedCharge);
