@@ -24,7 +24,9 @@ app.use("/api/chantiers", chantierRoutes);
 app.use("/api/charges", chargeRoutes);
 app.use("/api/salaries", salarieRoutes);
 app.use("/api/fournisseurs", fournisseurRoutes);
-
+app.use("/", (req, res) => {
+  res.send("Welcome to the API");
+});
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
