@@ -6,7 +6,7 @@ const router = express.Router();
 router.get("/", async (req, res) => {
   try {
     const salaries = await Salarie.find();
-    res.json(salaries);
+    res.json(Array.isArray(salaries) ? salaries : []);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
