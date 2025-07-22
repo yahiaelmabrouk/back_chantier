@@ -15,6 +15,19 @@ router.get("/chantier/:chantierId", async (req, res) => {
 // Créer une nouvelle charge
 router.post("/", async (req, res) => {
   try {
+    // If type is "Charges de personnel", ensure personnel array is present
+    if (req.body.type === "Charges de personnel") {
+      if (
+        !Array.isArray(req.body.personnel) ||
+        req.body.personnel.length === 0
+      ) {
+        return res.status(400).json({ message: "Aucun salarié sélectionné." });
+      }
+      req.body.budget = req.body.personnel.reduce(
+        (sum, p) => sum + (p.total || 0),
+        0
+      );
+    }
     // Optionally, validate structure based on type here
     const charge = new Charge(req.body);
     const savedCharge = await charge.save();

@@ -56,6 +56,15 @@ const chargeSchema = new mongoose.Schema(
         total: Number,
       },
     ],
+    personnel: [
+      {
+        salarieId: { type: mongoose.Schema.Types.ObjectId, ref: "Salarie" },
+        nom: String,
+        tauxHoraire: Number,
+        heures: Number,
+        total: Number,
+      },
+    ],
   },
   {
     timestamps: true,
