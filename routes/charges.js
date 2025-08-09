@@ -23,6 +23,23 @@ router.post("/", async (req, res) => {
       ) {
         return res.status(400).json({ message: "Aucun salarié sélectionné." });
       }
+      // Calculate total hours if not provided
+      req.body.personnel.forEach((p) => {
+        if (!p.totalHeures && Array.isArray(p.dates)) {
+          let totalHeures = 0;
+          p.dates.forEach((d) => {
+            if (
+              typeof d.heureDebut === "number" &&
+              typeof d.heureFin === "number" &&
+              d.heureFin > d.heureDebut
+            ) {
+              totalHeures += d.heureFin - d.heureDebut;
+            }
+          });
+          p.totalHeures = totalHeures;
+          p.total = (p.tauxHoraire || 0) * totalHeures;
+        }
+      });
       req.body.budget = req.body.personnel.reduce(
         (sum, p) => sum + (p.total || 0),
         0

@@ -34,6 +34,26 @@ const chantierSchema = new mongoose.Schema(
       default: "en cours",
       required: true,
     },
+    prixPrestation: {
+      type: Number,
+      default: 0,
+    },
+    numeroFacture: {
+      type: String,
+      default: "",
+    },
+    bailleur: {
+      type: String,
+      default: "",
+    },
+    adresseExecution: {
+      type: String,
+      default: "",
+    },
+    lieu: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

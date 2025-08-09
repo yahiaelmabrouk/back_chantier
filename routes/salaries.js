@@ -15,8 +15,8 @@ router.get("/", async (req, res) => {
 // Add a salarié
 router.post("/", async (req, res) => {
   try {
-    const { matricule, nom, tauxHoraire } = req.body;
-    const salarie = new Salarie({ matricule, nom, tauxHoraire });
+    const { matricule, nom } = req.body;
+    const salarie = new Salarie({ matricule, nom });
     await salarie.save();
     res.status(201).json(salarie);
   } catch (err) {
@@ -27,10 +27,10 @@ router.post("/", async (req, res) => {
 // Update a salarié
 router.put("/:id", async (req, res) => {
   try {
-    const { matricule, nom, tauxHoraire } = req.body;
+    const { matricule, nom } = req.body;
     const updated = await Salarie.findByIdAndUpdate(
       req.params.id,
-      { matricule, nom, tauxHoraire },
+      { matricule, nom },
       { new: true, runValidators: true }
     );
     if (!updated) return res.status(404).json({ error: "Salarié non trouvé" });
