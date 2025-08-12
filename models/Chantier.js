@@ -7,16 +7,7 @@ const chantierSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    dateCreation: {
-      type: Date,
-      required: true,
-      default: Date.now,
-    },
     client: {
-      type: String,
-      required: true,
-    },
-    lieuExecution: {
       type: String,
       required: true,
     },
@@ -30,7 +21,7 @@ const chantierSchema = new mongoose.Schema(
     },
     etat: {
       type: String,
-      enum: ["en cours", "fermé"],
+      enum: ["en cours", "provisoire", "fermé"],
       default: "en cours",
       required: true,
     },
@@ -42,10 +33,6 @@ const chantierSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    bailleur: {
-      type: String,
-      default: "",
-    },
     adresseExecution: {
       type: String,
       default: "",
@@ -54,10 +41,27 @@ const chantierSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    dateDebut: {
+      type: Date,
+      required: true,
+    },
+    heureDebut: {
+      type: String,
+      required: true,
+    },
+    dateFin: {
+      type: Date,
+      required: true,
+    },
+    heureFin: {
+      type: String,
+      required: true,
+    },
   },
   {
     timestamps: true,
   }
 );
 
+module.exports = mongoose.model("Chantier", chantierSchema);
 module.exports = mongoose.model("Chantier", chantierSchema);

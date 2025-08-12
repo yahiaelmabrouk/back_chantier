@@ -12,6 +12,8 @@ const cron = require("node-cron");
 const Chantier = require("./models/Chantier");
 const PrixOuvrage = require("./models/PrixOuvrage");
 const Charge = require("./models/Charge");
+const fs = require("fs");
+const https = require("https");
 
 const app = express();
 
@@ -35,13 +37,43 @@ app.use("/api/prestations", prestationRoutes); // <-- add this
 app.use("/", (req, res) => {
   res.send("Welcome to the API");
 });
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(
-    `Swagger documentation available at http://localhost:${PORT}/api-docs`
-  );
-});
+// SSL certificate paths
+let credentials;
+let useHttps = true;
+try {
+  const privateKey = fs.readFileSync("/etc/letsencrypt/renewal/api.gestioncash.com.conf/privkey.pem", "utf8");
+  const certificate = fs.readFileSync("/etc/letsencrypt/renewal/api.gestioncash.com.conf/fullchain.pem", "utf8");
+  credentials = { key: privateKey, cert: certificate };
+} catch (err) {
+  console.warn("[SSL] Certificate files not found. Starting server in HTTP mode.");
+  useHttps = false;
+}
+
+const PORT = process.env.PORT || 3001;
+
+function onError(err) {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[SERVER] Port ${PORT} is already in use. Please stop other processes using this port or change the PORT.`);
+    process.exit(1);
+  } else {
+    throw err;
+  }
+}
+
+if (useHttps) {
+  const server = https.createServer(credentials, app);
+  server.listen(PORT, () => {
+    console.log(`HTTPS Server running on port ${PORT}`);
+    console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
+  });
+  server.on('error', onError);
+} else {
+  const server = app.listen(PORT, () => {
+    console.log(`HTTP Server running on port ${PORT}`);
+    console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
+  });
+  server.on('error', onError);
+}
 
 // Daily job to add prix ouvrage charges fixes to each active chantier
 cron.schedule("15 0 * * *", async () => {

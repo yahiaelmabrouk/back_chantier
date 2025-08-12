@@ -11,9 +11,12 @@ const Chantier = require("../models/Chantier");
  *       required:
  *         - numAttachement
  *         - client
- *         - lieuExecution
  *         - natureTravail
  *         - nomChantier
+ *         - dateDebut
+ *         - heureDebut
+ *         - dateFin
+ *         - heureFin
  *       properties:
  *         _id:
  *           type: string
@@ -28,15 +31,38 @@ const Chantier = require("../models/Chantier");
  *         client:
  *           type: string
  *           description: Client name
- *         lieuExecution:
- *           type: string
- *           description: Execution location
  *         natureTravail:
  *           type: string
  *           description: Type of work
  *         nomChantier:
  *           type: string
  *           description: Construction site name
+ *         prixPrestation:
+ *           type: number
+ *         numeroFacture:
+ *           type: string
+ *         adresseExecution:
+ *           type: string
+ *         lieu:
+ *           type: string
+ *         dateDebut:
+ *           type: string
+ *           format: date
+ *           description: Date début du chantier
+ *         heureDebut:
+ *           type: string
+ *           description: Heure début (ex: "08:30")
+ *         dateFin:
+ *           type: string
+ *           format: date
+ *           description: Date fin du chantier
+ *         heureFin:
+ *           type: string
+ *           description: Heure fin (ex: "17:30")
+ *         etat:
+ *           type: string
+ *           enum: [en cours, provisoire, fermé]
+ *           description: Etat du chantier
  */
 
 /**
@@ -125,6 +151,20 @@ router.post("/", async (req, res) => {
   try {
     const chantier = new Chantier(req.body);
     const savedChantier = await chantier.save();
+
+    // --- Add 30% achat charge if prixPrestation is set and > 0 ---
+    if (savedChantier.prixPrestation && savedChantier.prixPrestation > 0) {
+      const Charge = require("../models/Charge");
+      const achatBudget = Number(savedChantier.prixPrestation) * 0.3;
+      await Charge.create({
+        chantierId: savedChantier._id,
+        type: "Achat",
+        name: "Achat initial (30% du budget travaux)",
+        budget: achatBudget,
+        description: "Charge ajoutée automatiquement lors de la création du chantier (30% du budget travaux)",
+      });
+    }
+
     res.status(201).json(savedChantier);
   } catch (error) {
     if (error.code === 11000) {
@@ -210,17 +250,42 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-// Close a chantier (set etat to "fermé")
-router.patch("/:id/close", async (req, res) => {
+// Set chantier to provisoire
+router.patch("/:id/provisoire", async (req, res) => {
   try {
     const chantier = await Chantier.findByIdAndUpdate(
       req.params.id,
-      { etat: "fermé" },
+      { etat: "provisoire" },
       { new: true }
     );
     if (!chantier) {
       return res.status(404).json({ message: "Chantier non trouvé" });
     }
+    // Delete the initial 30% achat charge if it exists
+    const Charge = require("../models/Charge");
+    await Charge.deleteMany({
+      chantierId: chantier._id,
+      type: "Achat",
+      name: "Achat initial (30% du budget travaux)",
+    });
+    res.json(chantier);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Close a chantier (set etat to "fermé") only if currently "provisoire"
+router.patch("/:id/close", async (req, res) => {
+  try {
+    const chantier = await Chantier.findById(req.params.id);
+    if (!chantier) {
+      return res.status(404).json({ message: "Chantier non trouvé" });
+    }
+    if (chantier.etat !== "provisoire") {
+      return res.status(400).json({ message: "Le chantier doit être provisoire pour être fermé." });
+    }
+    chantier.etat = "fermé";
+    await chantier.save();
     res.json(chantier);
   } catch (error) {
     res.status(400).json({ message: error.message });
