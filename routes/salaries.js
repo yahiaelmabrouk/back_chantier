@@ -15,8 +15,19 @@ router.get("/", async (req, res) => {
 // Add a salarié
 router.post("/", async (req, res) => {
   try {
-    const { matricule, nom, tauxHoraire } = req.body; // <-- add tauxHoraire
-    const salarie = new Salarie({ matricule, nom, tauxHoraire });
+    const { matricule, nom, tauxHoraire, aCamion } = req.body;
+    // Robust boolean conversion for aCamion
+    const isCamion =
+      aCamion === true ||
+      aCamion === "true" ||
+      aCamion === 1 ||
+      aCamion === "1";
+    const salarie = new Salarie({
+      matricule,
+      nom,
+      tauxHoraire,
+      aCamion: isCamion,
+    });
     await salarie.save();
     res.status(201).json(salarie);
   } catch (err) {
@@ -27,10 +38,21 @@ router.post("/", async (req, res) => {
 // Update a salarié
 router.put("/:id", async (req, res) => {
   try {
-    const { matricule, nom, tauxHoraire } = req.body; // <-- add tauxHoraire
+    const { matricule, nom, tauxHoraire, aCamion } = req.body;
+    // Robust boolean conversion for aCamion
+    const isCamion =
+      aCamion === true ||
+      aCamion === "true" ||
+      aCamion === 1 ||
+      aCamion === "1";
     const updated = await Salarie.findByIdAndUpdate(
       req.params.id,
-      { matricule, nom, tauxHoraire },
+      {
+        matricule,
+        nom,
+        tauxHoraire,
+        aCamion: isCamion,
+      },
       { new: true, runValidators: true }
     );
     if (!updated) return res.status(404).json({ error: "Salarié non trouvé" });

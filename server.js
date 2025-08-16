@@ -5,7 +5,6 @@ const chantierRoutes = require("./routes/chantiers");
 const chargeRoutes = require("./routes/charges");
 const salarieRoutes = require("./routes/salaries"); // add this
 const fournisseurRoutes = require("./routes/fournisseurs");
-const { swaggerUi, specs } = require("./config/swagger");
 const prixOuvrageRoutes = require("./routes/prixOuvrage");
 const prestationRoutes = require("./routes/prestations"); // <-- add this
 const cron = require("node-cron");
@@ -23,9 +22,6 @@ connectDB();
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// Swagger Documentation
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 // Routes
 app.use("/api/chantiers", chantierRoutes);
@@ -64,13 +60,11 @@ if (useHttps) {
   const server = https.createServer(credentials, app);
   server.listen(PORT, () => {
     console.log(`HTTPS Server running on port ${PORT}`);
-    console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
   });
   server.on('error', onError);
 } else {
   const server = app.listen(PORT, () => {
     console.log(`HTTP Server running on port ${PORT}`);
-    console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
   });
   server.on('error', onError);
 }
@@ -132,3 +126,4 @@ cron.schedule("15 0 * * *", async () => {
     console.error("[CRON] Erreur ajout prix ouvrage journalier:", err);
   }
 });
+    

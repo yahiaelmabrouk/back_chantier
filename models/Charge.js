@@ -74,6 +74,7 @@ const chargeSchema = new mongoose.Schema(
             heureFin: Number,
           },
         ], // Add this
+        fraisCamion: Number, // <-- Ajouté: frais de camion si applicable
       },
     ],
   },

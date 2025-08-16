@@ -25,12 +25,14 @@ const chargeRouter = require("./routes/charges");
 const salarieRouter = require("./routes/salaries");
 const fournisseurRouter = require("./routes/fournisseurs");
 const prixOuvrageRouter = require("./routes/prixOuvrage");
+const fraisTransportRoutes = require("./routes/fraisTransport");
 
 app.use("/api/chantiers", chantierRouter);
 app.use("/api/charges", chargeRouter);
 app.use("/api/salaries", salarieRouter);
 app.use("/api/fournisseurs", fournisseurRouter);
 app.use("/api/prix-ouvrage", prixOuvrageRouter);
+app.use("/api/frais-transport", fraisTransportRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
