@@ -77,6 +77,8 @@ const chargeSchema = new mongoose.Schema(
         fraisCamion: Number, // <-- Ajouté: frais de camion si applicable
       },
     ],
+
+
   },
   {
     timestamps: true,

@@ -7,6 +7,7 @@ const salarieRoutes = require("./routes/salaries"); // add this
 const fournisseurRoutes = require("./routes/fournisseurs");
 const prixOuvrageRoutes = require("./routes/prixOuvrage");
 const prestationRoutes = require("./routes/prestations"); // <-- add this
+const honoraireRoutes = require("./routes/honoraires"); // <-- new
 const cron = require("node-cron");
 const Chantier = require("./models/Chantier");
 const PrixOuvrage = require("./models/PrixOuvrage");
@@ -30,9 +31,29 @@ app.use("/api/salaries", salarieRoutes);
 app.use("/api/fournisseurs", fournisseurRoutes);
 app.use("/api/prix-ouvrage", prixOuvrageRoutes);
 app.use("/api/prestations", prestationRoutes); // <-- add this
+app.use("/api/honoraires", honoraireRoutes); // <-- new
+
+// ADD THIS LINE to register frais transport config route:
+const fraisTransportConfigRouter = require("./routes/fraisTransportConfig");
+app.use("/api/frais-transport-config", fraisTransportConfigRouter);
+
+// Alias (backward compatibility for Honoraires button):
+// POST /api/honoraires/add-frais-transport/:date
+app.post("/api/honoraires/add-frais-transport/:date", (req, res) => {
+  const handler = chargeRoutes?.applyTransportFees;
+  if (!handler) {
+    return res.status(404).json({ message: "Route indisponible" });
+  }
+  // Forward date param into the handler body
+  req.body = { ...(req.body || {}), date: req.params.date };
+  return handler(req, res);
+});
+
+// Move this catch-all route AFTER all API routes and middleware!
 app.use("/", (req, res) => {
   res.send("Welcome to the API");
 });
+
 // SSL certificate paths
 let credentials;
 let useHttps = true;
@@ -126,4 +147,3 @@ cron.schedule("15 0 * * *", async () => {
     console.error("[CRON] Erreur ajout prix ouvrage journalier:", err);
   }
 });
-    

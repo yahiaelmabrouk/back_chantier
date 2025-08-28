@@ -64,4 +64,4 @@ const chantierSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Chantier", chantierSchema);
-module.exports = mongoose.model("Chantier", chantierSchema);
+
