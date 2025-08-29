@@ -120,7 +120,7 @@ router.patch("/:id/close", async (req, res) => {
   }
 });
 
-   
+module.exports = router;
 router.post("/", async (req, res) => {
   try {
     const chantier = new Chantier(req.body);
@@ -149,35 +149,6 @@ router.post("/", async (req, res) => {
   }
 });
 
-/**
- * @swagger
- * /api/chantiers/{id}:
- *   put:
- *     summary: Update a chantier
- *     tags: [Chantiers]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The chantier id
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Chantier'
- *     responses:
- *       200:
- *         description: Chantier updated successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Chantier'
- *       404:
- *         description: Chantier not found
- */
 router.put("/:id", async (req, res) => {
   try {
     const chantier = await Chantier.findByIdAndUpdate(req.params.id, req.body, {
@@ -193,25 +164,6 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-/**
- * @swagger
- * /api/chantiers/{id}:
- *   delete:
- *     summary: Delete a chantier
- *     tags: [Chantiers]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: The chantier id
- *     responses:
- *       200:
- *         description: Chantier deleted successfully
- *       404:
- *         description: Chantier not found
- */
 router.delete("/:id", async (req, res) => {
   try {
     const chantier = await Chantier.findByIdAndDelete(req.params.id);
