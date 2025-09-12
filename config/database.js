@@ -4,18 +4,24 @@ const mongoose = require("mongoose");
 
 const connectDB = async () => {
   try {
-    // Replace with your MongoDB connection string
-    // const connectionString = "mongodb://localhost:27017/chantier_db";
+    // Get connection string from environment variables
     const connectionString = process.env.connectionString;
-    await mongoose.connect(connectionString, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-
-    console.log("MongoDB Connected Successfully");
+    
+    if (!connectionString) {
+      console.error("Connection string is missing in .env file");
+      throw new Error("MongoDB connection string not found");
+    }
+    
+    console.log("Connecting to MongoDB...");
+    
+    // Connect to the database
+    await mongoose.connect(connectionString);
+    
+    console.log("MongoDB connected successfully");
+    return mongoose.connection;
   } catch (error) {
-    console.error("Database connection error:", error);
-    process.exit(1);
+    console.error("MongoDB connection error:", error);
+    throw error;
   }
 };
 

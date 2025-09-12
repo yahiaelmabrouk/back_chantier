@@ -1,61 +1,66 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const bodyParser = require("body-parser");
-const cors = require("cors");
+// Load environment variables early
 require("dotenv").config();
 
+const express = require("express");
 const app = express();
 
 // Middleware
-app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Connect to MongoDB
-mongoose
-  .connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+// CORS middleware
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
 
-// Routes
-const chantierRouter = require("./routes/chantiers");
-const chargeRouter = require("./routes/charges");
-const salarieRouter = require("./routes/salaries");
-const fournisseurRouter = require("./routes/fournisseurs");
-const prixOuvrageRouter = require("./routes/prixOuvrage");
-const fraisTransportRoutes = require("./routes/fraisTransport");
-const fraisTransportConfigRouter = require("./routes/fraisTransportConfig");
-const honoraireRoutes = require("./routes/honoraires"); // add
-
-app.use("/api/chantiers", chantierRouter);
-app.use("/api/charges", chargeRouter);
-app.use("/api/salaries", salarieRouter);
-app.use("/api/fournisseurs", fournisseurRouter);
-app.use("/api/prix-ouvrage", prixOuvrageRouter);
-app.use("/api/frais-transport", fraisTransportRoutes);
-app.use("/api/frais-transport-config", fraisTransportConfigRouter);
-app.use("/api/honoraires", honoraireRoutes); // add
-
-// Alias (backward compatibility for Honoraires button):
-// POST /api/honoraires/add-frais-transport/:date
-app.post("/api/honoraires/add-frais-transport/:date", (req, res) => {
-  const handler = chargeRouter?.applyTransportFees;
-  if (!handler) {
-    return res.status(404).json({ message: "Route indisponible" });
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
   }
-  req.body = { ...(req.body || {}), date: req.params.date };
-  return handler(req, res);
+  next();
 });
 
-// Error handling middleware
+// Simple request logger
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Auth routes
+const loginRouter = require("./routes/login");
+app.use("/login", loginRouter);
+app.use("/api/login", loginRouter);
+
+// API routes
+app.use("/api/chantiers", require("./routes/chantiers"));
+app.use("/api/charges", require("./routes/charges"));
+app.use("/api/fournisseurs", require("./routes/fournisseurs"));
+app.use("/api/frais-transport-config", require("./routes/fraisTransportConfig"));
+app.use("/api/honoraires", require("./routes/honoraires"));
+app.use("/api/prestations", require("./routes/prestations"));
+app.use("/api/prix-ouvrage", require("./routes/prixOuvrage"));
+app.use("/api/salaries", require("./routes/salaries"));
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: "Not Found", path: req.originalUrl });
+});
+
+// Error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send("Something broke!");
+  console.error("Server error:", err);
+  res.status(500).json({
+    error: "Server Error",
+    message: err.message,
+  });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+module.exports = app;
