@@ -1,21 +1,73 @@
-const mongoose = require("mongoose");
+const { pool } = require('../config/database');
 
-const customChargeSchema = new mongoose.Schema({
-  label: { type: String, required: true },
-  budget: { type: Number, required: true, min: 0 },
-});
+class PrixOuvrage {
+  static async getAll() {
+    try {
+      const [rows] = await pool.query('SELECT * FROM prix_ouvrage ORDER BY nom');
+      return rows;
+    } catch (error) {
+      throw error;
+    }
+  }
 
-const prixOuvrageSchema = new mongoose.Schema(
-  {
-    fraisFinanciers: { type: Number, required: true, min: 0 },
-    emprunt: { type: Number, required: true, min: 0 },
-    fraisComptable: { type: Number, required: true, min: 0 },
-    loyer: { type: Number, required: true, min: 0 },
-    fraisGeneraux: { type: Number, required: true, min: 0 },
-    chargeSociale: { type: Number, required: true, min: 0 },
-    customCharges: [customChargeSchema],
-  },
-  { timestamps: true }
-);
+  static async getById(id) {
+    try {
+      const [rows] = await pool.query('SELECT * FROM prix_ouvrage WHERE id = ?', [id]);
+      return rows[0];
+    } catch (error) {
+      throw error;
+    }
+  }
 
-module.exports = mongoose.model("PrixOuvrage", prixOuvrageSchema);
+  static async create(prixOuvrageData) {
+    try {
+      const query = `
+        INSERT INTO prix_ouvrage 
+        (nom, prix_mois) 
+        VALUES (?, ?)
+      `;
+      
+      const [result] = await pool.query(query, [
+        prixOuvrageData.nom,
+        prixOuvrageData.prix_mois
+      ]);
+      
+      return { id: result.insertId, ...prixOuvrageData };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async update(id, prixOuvrageData) {
+    try {
+      const query = `
+        UPDATE prix_ouvrage 
+        SET nom = ?, 
+            prix_mois = ?
+        WHERE id = ?
+      `;
+      
+      await pool.query(query, [
+        prixOuvrageData.nom,
+        prixOuvrageData.prix_mois,
+        id
+      ]);
+      
+      return { id, ...prixOuvrageData };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async delete(id) {
+    try {
+      await pool.query('DELETE FROM prix_ouvrage WHERE id = ?', [id]);
+      return { id };
+    } catch (error) {
+      throw error;
+    }
+  }
+}
+
+
+module.exports = PrixOuvrage;

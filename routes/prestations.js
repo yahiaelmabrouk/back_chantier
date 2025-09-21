@@ -2,63 +2,133 @@ const express = require("express");
 const router = express.Router();
 const Prestation = require("../models/Prestation");
 
-// Get all prestations
+// Health check endpoint
+router.get("/health", (req, res) => {
+  res.json({
+    status: "OK",
+    service: "prestations",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// GET /api/prestations - List all prestations
 router.get("/", async (req, res) => {
   try {
-    const prestations = await Prestation.find();
+    console.log("Fetching all prestations...");
+    const prestations = await Prestation.getAll();
+    console.log("Prestations found:", prestations.length);
     res.json(prestations);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("Error fetching prestations:", error);
+    res.status(500).json({
+      message: "Erreur lors de la récupération des prestations",
+      error: error.message,
+    });
   }
 });
 
-// Get one prestation
+// GET /api/prestations/:id - Get single prestation
 router.get("/:id", async (req, res) => {
   try {
-    const prestation = await Prestation.findById(req.params.id);
-    if (!prestation) return res.status(404).json({ error: "Not found" });
+    console.log("Fetching prestation with ID:", req.params.id);
+    const prestation = await Prestation.getById(req.params.id);
+    if (!prestation) {
+      return res.status(404).json({ message: "Prestation introuvable" });
+    }
     res.json(prestation);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("Error fetching prestation:", error);
+    res.status(500).json({
+      message: "Erreur lors de la récupération de la prestation",
+      error: error.message,
+    });
   }
 });
 
-// Create prestation
+// POST /api/prestations - Create new prestation
 router.post("/", async (req, res) => {
   try {
-    const { typePrestation, prixHeure } = req.body;
-    const prestation = new Prestation({ typePrestation, prixHeure });
-    await prestation.save();
-    res.status(201).json(prestation);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    const { name, prix_heure } = req.body;
+    console.log("Creating prestation:", { name, prix_heure });
+
+    // Validation
+    if (!name || !name.trim()) {
+      return res
+        .status(400)
+        .json({ message: "Le nom de la prestation est requis" });
+    }
+
+    if (!prix_heure || isNaN(prix_heure) || parseFloat(prix_heure) <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Le prix par heure doit être un nombre positif" });
+    }
+
+    const prestationData = {
+      name: name.trim(),
+      prix_heure: parseFloat(prix_heure),
+    };
+
+    const savedPrestation = await Prestation.create(prestationData);
+    console.log("Prestation created:", savedPrestation);
+    res.status(201).json(savedPrestation);
+  } catch (error) {
+    console.error("Error creating prestation:", error);
+    res.status(500).json({
+      message: "Erreur lors de la création de la prestation",
+      error: error.message,
+    });
   }
 });
 
-// Update prestation
+// PUT /api/prestations/:id - Update prestation
 router.put("/:id", async (req, res) => {
   try {
-    const { typePrestation, prixHeure } = req.body;
-    const prestation = await Prestation.findByIdAndUpdate(
-      req.params.id,
-      { typePrestation, prixHeure },
-      { new: true, runValidators: true }
-    );
-    if (!prestation) return res.status(404).json({ error: "Not found" });
-    res.json(prestation);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    const { name, prix_heure } = req.body;
+    console.log("Updating prestation:", req.params.id, { name, prix_heure });
+
+    // Validation
+    if (!name || !name.trim()) {
+      return res
+        .status(400)
+        .json({ message: "Le nom de la prestation est requis" });
+    }
+
+    if (!prix_heure || isNaN(prix_heure) || parseFloat(prix_heure) <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Le prix par heure doit être un nombre positif" });
+    }
+
+    const prestationData = {
+      name: name.trim(),
+      prix_heure: parseFloat(prix_heure),
+    };
+
+    const updatedPrestation = await Prestation.update(req.params.id, prestationData);
+    console.log("Prestation updated:", updatedPrestation);
+    res.json(updatedPrestation);
+  } catch (error) {
+    console.error("Error updating prestation:", error);
+    res.status(500).json({
+      message: "Erreur lors de la mise à jour de la prestation",
+      error: error.message,
+    });
   }
 });
 
-// Delete prestation
+// DELETE /api/prestations/:id - Delete prestation
 router.delete("/:id", async (req, res) => {
   try {
-    const prestation = await Prestation.findByIdAndDelete(req.params.id);
-    if (!prestation) return res.status(404).json({ error: "Not found" });
-    res.json({ message: "Prestation supprimée" });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.log("Deleting prestation:", req.params.id);
+    await Prestation.delete(req.params.id);
+    res.json({ message: "Prestation supprimée avec succès" });
+  } catch (error) {
+    console.error("Error deleting prestation:", error);
+    res.status(500).json({
+      message: "Erreur lors de la suppression de la prestation",
+      error: error.message,
+    });
   }
 });
 

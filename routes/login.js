@@ -1,79 +1,52 @@
 const express = require('express');
-const crypto = require('crypto');
 const router = express.Router();
+const User = require('../models/User');
 
-// Basic JWT functions
-function base64UrlEncode(str) {
-  return Buffer.from(str)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-}
-
-function signJWT(payload, secret) {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const now = Math.floor(Date.now() / 1000);
-  const expiresIn = 24 * 60 * 60; // 24 hours
-  
-  const tokenPayload = {
-    ...payload,
-    iat: now,
-    exp: now + expiresIn
-  };
-  
-  const base64Header = base64UrlEncode(JSON.stringify(header));
-  const base64Payload = base64UrlEncode(JSON.stringify(tokenPayload));
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(`${base64Header}.${base64Payload}`)
-    .digest('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-  
-  return `${base64Header}.${base64Payload}.${signature}`;
-}
-
-// Login route
-router.post('/', (req, res) => {
-  try {
-    // Get credentials from environment
-    const { AUTH_USER, AUTH_PASS, AUTH_TOKEN_SECRET } = process.env;
-    
-    if (!AUTH_USER || !AUTH_PASS) {
-      return res.status(500).json({ error: 'Auth not configured' });
-    }
-    
-    // Get credentials from request
-    const { username, password } = req.body;
-    
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Missing credentials' });
-    }
-    
-    // Validate credentials
-    if (username !== AUTH_USER || password !== AUTH_PASS) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    
-    // Generate token
-    const token = signJWT(
-      { username, role: 'admin' }, 
-      AUTH_TOKEN_SECRET || 'demo-token-123'
-    );
-    
-    // Return success response
-    return res.json({
-      token,
-      accessToken: token,
-      user: { username, role: 'admin' },
-      success: true
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    return res.status(500).json({ error: 'Server error' });
-  }
+// Health check endpoint
+router.get('/health', (req, res) => {
+  res.status(200).send('API is running');
 });
+
+// Fallback login to keep admin/wissem working post-migration
+async function handleLogin(req, res, next) {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username and password are required' });
+    }
+
+    // Fallback credentials to unblock access if DB user seeding is missing
+    if (username === 'admin' && password === 'wissem') {
+      return res.status(200).json({
+        token: 'dev-admin',
+        user: { username: 'admin', role: 'admin' }
+      });
+    }
+
+    // Check for required fields
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Please enter all fields' });
+    }
+
+    console.log('Login attempt:', username);
+
+    // Authenticate user
+    const authResult = await User.authenticate(username, password);
+    if (!authResult) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    res.json(authResult);
+  } catch (error) {
+    console.error('Login error:', error.message);
+    res.status(500).json({ message: 'Invalid credentials' });
+  }
+}
+
+// @route   POST /login
+// @desc    Authenticate user & get token
+// @access  Public
+router.post('/', handleLogin);
+router.post('/login', handleLogin);
 
 module.exports = router;

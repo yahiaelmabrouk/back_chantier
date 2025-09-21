@@ -1,56 +1,79 @@
 const express = require("express");
-const Fournisseur = require("../models/Fournisseur");
 const router = express.Router();
+const fournisseurService = require("../services/fournisseurService");
 
 // Get all fournisseurs
 router.get("/", async (req, res) => {
   try {
-    const fournisseurs = await Fournisseur.find();
+    const fournisseurs = await fournisseurService.getAll();
     res.json(fournisseurs);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("Error in GET /fournisseurs:", error);
+    res
+      .status(500)
+      .json({ error: "Erreur lors de la récupération des fournisseurs" });
   }
 });
 
-// Add a fournisseur
+// Get fournisseur by ID
+router.get("/:id", async (req, res) => {
+  try {
+    const fournisseur = await fournisseurService.getById(req.params.id);
+    if (!fournisseur) {
+      return res.status(404).json({ error: "Fournisseur non trouvé" });
+    }
+    res.json(fournisseur);
+  } catch (error) {
+    console.error("Error in GET /fournisseurs/:id:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération du fournisseur" });
+  }
+});
+
+// Create new fournisseur
 router.post("/", async (req, res) => {
   try {
-    const { nom, budget } = req.body;
-    const fournisseur = new Fournisseur({ nom, budget });
-    await fournisseur.save();
+    const { name, budget } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Le nom est requis" });
+    }
+
+    const fournisseur = await fournisseurService.create({ name, budget });
     res.status(201).json(fournisseur);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+  } catch (error) {
+    console.error("Error in POST /fournisseurs:", error);
+    res.status(500).json({ error: "Erreur lors de la création du fournisseur" });
   }
 });
 
-// Update a fournisseur
+// Update fournisseur
 router.put("/:id", async (req, res) => {
   try {
-    const { nom, budget } = req.body;
-    const fournisseur = await Fournisseur.findById(req.params.id);
-    if (!fournisseur)
-      return res.status(404).json({ error: "Fournisseur non trouvé" });
+    const { name, budget } = req.body;
 
-    fournisseur.nom = nom;
-    fournisseur.budget = Number(budget);
+    if (!name) {
+      return res.status(400).json({ error: "Le nom est requis" });
+    }
 
-    await fournisseur.save();
+    const fournisseur = await fournisseurService.update(req.params.id, {
+      name,
+      budget,
+    });
     res.json(fournisseur);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+  } catch (error) {
+    console.error("Error in PUT /fournisseurs/:id:", error);
+    res.status(500).json({ error: "Erreur lors de la mise à jour du fournisseur" });
   }
 });
 
-// Delete a fournisseur
+// Delete fournisseur
 router.delete("/:id", async (req, res) => {
   try {
-    const deleted = await Fournisseur.findByIdAndDelete(req.params.id);
-    if (!deleted)
-      return res.status(404).json({ error: "Fournisseur non trouvé" });
-    res.json({ message: "Fournisseur supprimé" });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    await fournisseurService.delete(req.params.id);
+    res.json({ message: "Fournisseur supprimé avec succès" });
+  } catch (error) {
+    console.error("Error in DELETE /fournisseurs/:id:", error);
+    res.status(500).json({ error: "Erreur lors de la suppression du fournisseur" });
   }
 });
 

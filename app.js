@@ -2,65 +2,51 @@
 require("dotenv").config();
 
 const express = require("express");
+const cors = require("cors");
+
+// Create Express app
 const app = express();
 
 // Middleware
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// CORS middleware
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
+// Import routes
+const chargeRoutes = require('./routes/charges');
+const fournisseurRoutes = require('./routes/fournisseurs');
+const salarieRoutes = require('./routes/salaries');
+const prestationRoutes = require('./routes/prestations');
+const prixOuvrageRoutes = require('./routes/prixOuvrage');
+const chantierRoutes = require('./routes/chantiers');
+const fraisTransportConfigRoutes = require('./routes/fraisTransportConfig');
+const loginRoutes = require('./routes/login');
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-  next();
-});
-
-// Simple request logger
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
-  next();
-});
+// Use routes
+app.use('/api/charges', chargeRoutes);
+app.use('/api/fournisseurs', fournisseurRoutes);
+app.use('/api/salaries', salarieRoutes);
+app.use('/api/prestations', prestationRoutes);
+app.use('/api/prix-ouvrage', prixOuvrageRoutes);
+app.use('/api/chantiers', chantierRoutes);
+app.use('/api/frais-transport-config', fraisTransportConfigRoutes);
+app.use('/api/honoraires', honoraireRoutes);
+app.use('/api', loginRoutes);
 
 // Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Auth routes
-const loginRouter = require("./routes/login");
-app.use("/login", loginRouter);
-app.use("/api/login", loginRouter);
-
-// API routes
-app.use("/api/chantiers", require("./routes/chantiers"));
-app.use("/api/charges", require("./routes/charges"));
-app.use("/api/fournisseurs", require("./routes/fournisseurs"));
-app.use("/api/frais-transport-config", require("./routes/fraisTransportConfig"));
-app.use("/api/honoraires", require("./routes/honoraires"));
-app.use("/api/prestations", require("./routes/prestations"));
-app.use("/api/prix-ouvrage", require("./routes/prixOuvrage"));
-app.use("/api/salaries", require("./routes/salaries"));
-
 // 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: "Not Found", path: req.originalUrl });
+app.use('*', (req, res) => {
+  res.status(404).json({ error: 'Route not found' });
 });
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error("Server error:", err);
-  res.status(500).json({
-    error: "Server Error",
-    message: err.message,
-  });
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
 });
 
 module.exports = app;
