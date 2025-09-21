@@ -38,6 +38,14 @@ const testDatabaseConnection = async () => {
 // Load routes with proper error handling
 console.log('Loading routes...');
 
+// Add login route first to ensure it has priority
+try {
+  app.use('/api/login', require('./routes/login'));
+  console.log('✅ Login routes loaded');
+} catch (error) {
+  console.error('❌ Login routes failed:', error.message);
+}
+
 // Core routes
 try {
   app.use('/api/chantiers', require('./routes/chantiers'));
@@ -67,11 +75,10 @@ try {
   console.error('❌ Charge routes failed:', error.message);
 }
 
-// Optional routes
+// Optional routes - Remove login from here since we already loaded it
 const optionalRoutes = [
   { path: '/api/salaries', file: './routes/salaries', name: 'Salaries' },
   { path: '/api/frais-transport-config', file: './routes/fraisTransportConfig', name: 'Frais Transport Config' },
-  { path: '/api/login', file: './routes/login', name: 'Login' },
   { path: '/api/prix-ouvrage', file: './routes/prixOuvrage', name: 'Prix Ouvrage' }
 ];
 
@@ -89,7 +96,7 @@ optionalRoutes.forEach(route => {
   }
 });
 
-// Health check endpoint
+// Health check endpoint - make sure this comes AFTER loading the login routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
