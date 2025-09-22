@@ -8,10 +8,15 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
+// ...existing code...
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: [
+    'http://localhost:3000',
+    'https://gestioncash.com'
+  ],
   credentials: true
 }));
+// ...existing code...
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
