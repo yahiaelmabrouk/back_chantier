@@ -138,38 +138,29 @@ router.post("/", async (req, res) => {
 });
 
 // PUT /api/charges/:id
-// router.put("/:id", async (req, res) => {
-//   try {
-//     const id = req.params.id;
-
-//     // Ensure personnel entries are persisted properly on update
-//     const body = { ...req.body };
-//     if (body.type === "Charges de personnel" && Array.isArray(body.personnel)) {
-//       try {
-//         body.personnel_data = JSON.stringify(body.personnel);
-//       } catch (_) {
-//         body.personnel_data = JSON.stringify([]);
-//       }
-//     }
-
-//     const updated = await ChargeModel.updateCharge(id, body);
-//     const mapped = mapChargeRow(updated);
-//     res.json(mapped || updated);
-//   } catch (err) {
-//     console.error("PUT /api/charges/:id error", err);
-//     res.status(500).json({ error: "Failed to update charge" });
-//   }
-// });
-router.put('/:id', async (req, res) => {
+router.put("/:id", async (req, res) => {
   try {
-    const updated = await ChargeModel.update(req.params.id, req.body);
-    if (!updated) return res.status(404).json({ message: 'Not found' });
-    res.json(updated); // objet complet renvoyé
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: 'Erreur serveur' });
+    const id = req.params.id;
+
+    // Ensure personnel entries are persisted properly on update
+    const body = { ...req.body };
+    if (body.type === "Charges de personnel" && Array.isArray(body.personnel)) {
+      try {
+        body.personnel_data = JSON.stringify(body.personnel);
+      } catch (_) {
+        body.personnel_data = JSON.stringify([]);
+      }
+    }
+
+    const updated = await ChargeModel.updateCharge(id, body);
+    const mapped = mapChargeRow(updated);
+    res.json(mapped || updated);
+  } catch (err) {
+    console.error("PUT /api/charges/:id error", err);
+    res.status(500).json({ error: "Failed to update charge" });
   }
 });
+
 // DELETE /api/charges/:id
 router.delete("/:id", async (req, res) => {
   try {

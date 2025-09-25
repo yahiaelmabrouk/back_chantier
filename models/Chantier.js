@@ -3,7 +3,8 @@ const { pool } = require('../config/database');
 class Chantier {
   static async getAll() {
     try {
-      const [rows] = await pool.execute('SELECT * FROM chantiers ORDER BY dateSaisie DESC');
+      // Use ORDER BY id DESC for compatibility (dateSaisie may not always exist)
+      const [rows] = await pool.execute('SELECT * FROM chantiers ORDER BY id DESC');
       return rows;
     } catch (error) {
       console.error('Error in getAll:', error);
@@ -32,20 +33,16 @@ class Chantier {
         lieu,
         prixPrestation,
         dateDebut,
+        heureDebut,
         dateFin,
+        heureFin,
         dateSaisie,
         etat
       } = data;
 
       // normalize helpers
-      const toMySQLDateTime = (v) => {
-        if (!v) return null;
-        const d = v instanceof Date ? v : new Date(v);
-        return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 19).replace('T', ' ');
-      };
       const toMySQLDate = (v) => {
         if (!v) return null;
-        // if already 'YYYY-MM-DD', keep it
         if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
         const d = v instanceof Date ? v : new Date(v);
         return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
@@ -55,8 +52,17 @@ class Chantier {
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
       };
+      const toTime = (v) => {
+        if (!v) return null;
+        if (/^\d{2}:\d{2}$/.test(v)) return v;
+        if (typeof v === 'string' && v.includes('T')) {
+          // ISO string
+          return v.split('T')[1]?.substring(0,5) || null;
+        }
+        return null;
+      };
 
-      // Use exact column names from your database schema
+      // Insert with all columns
       const sql = `
         INSERT INTO chantiers (
           nomChantier, 
@@ -67,10 +73,12 @@ class Chantier {
           lieu, 
           prixPrestation, 
           dateDebut, 
+          heureDebut,
           dateFin, 
+          heureFin,
           dateSaisie, 
           etat
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       const values = [
@@ -81,8 +89,10 @@ class Chantier {
         adresseExecution || null,
         lieu || null,
         toNumberOrNull(prixPrestation),
-        toMySQLDateTime(dateDebut),
-        toMySQLDateTime(dateFin),
+        toMySQLDate(dateDebut),
+        toTime(heureDebut),
+        toMySQLDate(dateFin),
+        toTime(heureFin),
         toMySQLDate(dateSaisie) || new Date().toISOString().split('T')[0],
         etat || 'en cours'
       ];
@@ -111,17 +121,14 @@ class Chantier {
         lieu,
         prixPrestation,
         dateDebut,
+        heureDebut,
         dateFin,
+        heureFin,
         dateSaisie,
         etat
       } = data;
 
       // normalize helpers
-      const toMySQLDateTime = (v) => {
-        if (!v) return null;
-        const d = v instanceof Date ? v : new Date(v);
-        return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 19).replace('T', ' ');
-      };
       const toMySQLDate = (v) => {
         if (!v) return null;
         if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
@@ -132,6 +139,15 @@ class Chantier {
         if (v === null || v === undefined || v === '') return null;
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
+      };
+      const toTime = (v) => {
+        if (!v) return null;
+        if (/^\d{2}:\d{2}$/.test(v)) return v;
+        if (typeof v === 'string' && v.includes('T')) {
+          // ISO string
+          return v.split('T')[1]?.substring(0,5) || null;
+        }
+        return null;
       };
 
       const sql = `
@@ -144,7 +160,9 @@ class Chantier {
           lieu = ?, 
           prixPrestation = ?, 
           dateDebut = ?, 
+          heureDebut = ?,
           dateFin = ?, 
+          heureFin = ?,
           dateSaisie = ?, 
           etat = ?
         WHERE id = ?
@@ -158,8 +176,10 @@ class Chantier {
         adresseExecution || null,
         lieu || null,
         toNumberOrNull(prixPrestation),
-        toMySQLDateTime(dateDebut),
-        toMySQLDateTime(dateFin),
+        toMySQLDate(dateDebut),
+        toTime(heureDebut),
+        toMySQLDate(dateFin),
+        toTime(heureFin),
         toMySQLDate(dateSaisie) || new Date().toISOString().split('T')[0],
         etat || 'en cours',
         id

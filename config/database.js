@@ -66,7 +66,7 @@ const originalExecute = pool.execute;
 if (pool && typeof pool.execute === 'function') {
   pool.execute = async function(query, params) {
     console.log('DEBUG: Executing query:', query);
-    console.log('DEBUG: With params:', params);
+    console.log('DEBUG: With params:', params || []);
     try {
       const result = await originalExecute.call(this, query, params);
       console.log('DEBUG: Query success, result:', result);
