@@ -37,7 +37,8 @@ class Chantier {
         dateFin,
         heureFin,
         dateSaisie,
-        etat
+        etat,
+        numBonFacture // new
       } = data;
 
       // normalize helpers
@@ -77,8 +78,9 @@ class Chantier {
           dateFin, 
           heureFin,
           dateSaisie, 
-          etat
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          etat,
+          numBonFacture
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       const values = [
@@ -94,7 +96,8 @@ class Chantier {
         toMySQLDate(dateFin),
         toTime(heureFin),
         toMySQLDate(dateSaisie) || new Date().toISOString().split('T')[0],
-        etat || 'en cours'
+        etat || 'en cours',
+        numBonFacture || null // new
       ];
 
       console.log('SQL:', sql);
@@ -125,7 +128,8 @@ class Chantier {
         dateFin,
         heureFin,
         dateSaisie,
-        etat
+        etat,
+        numBonFacture // new
       } = data;
 
       // normalize helpers
@@ -164,7 +168,8 @@ class Chantier {
           dateFin = ?, 
           heureFin = ?,
           dateSaisie = ?, 
-          etat = ?
+          etat = ?,
+          numBonFacture = ?
         WHERE id = ?
       `;
 
@@ -182,6 +187,7 @@ class Chantier {
         toTime(heureFin),
         toMySQLDate(dateSaisie) || new Date().toISOString().split('T')[0],
         etat || 'en cours',
+        numBonFacture || null, // new
         id
       ];
 

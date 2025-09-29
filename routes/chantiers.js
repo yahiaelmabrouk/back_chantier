@@ -63,7 +63,8 @@ router.post('/', async (req, res) => {
       dateDebut: req.body.dateDebut || null,
       dateFin: req.body.dateFin || null,
       dateSaisie: req.body.dateSaisie || new Date().toISOString().split('T')[0],
-      etat: req.body.etat || 'en cours'
+      etat: req.body.etat || 'en cours',
+      numBonFacture: req.body.numBonFacture || null // new
     };
     
     console.log('Processed data for database:', chantierData);
@@ -154,7 +155,7 @@ router.put('/:id', async (req, res) => {
 
     // Normalize fields if present in payload
     const toNullIfEmpty = (v) => (v === '' ? null : v);
-    ['adresseExecution', 'lieu', 'dateDebut', 'dateFin', 'dateSaisie'].forEach((k) => {
+    ['adresseExecution', 'lieu', 'dateDebut', 'dateFin', 'dateSaisie', 'numBonFacture'].forEach((k) => {
       if (k in req.body) merged[k] = toNullIfEmpty(req.body[k]);
     });
 
@@ -168,6 +169,7 @@ router.put('/:id', async (req, res) => {
     if (typeof req.body.client === 'string') merged.client = req.body.client.trim();
     if (typeof req.body.natureTravail === 'string') merged.natureTravail = req.body.natureTravail.trim();
     if (typeof req.body.adresseExecution === 'string') merged.adresseExecution = req.body.adresseExecution.trim();
+    if (typeof req.body.numBonFacture === 'string') merged.numBonFacture = req.body.numBonFacture.trim();
 
     const updatedChantier = await Chantier.update(id, merged);
     if (!updatedChantier) {

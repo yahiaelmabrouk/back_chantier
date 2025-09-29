@@ -87,6 +87,115 @@ function toSnakeCaseKeys(payload) {
   return out;
 }
 
+// -------------------- NEW HELPERS FOR BILLABLE NORMALIZATION --------------------
+
+function isValidWorkDay(d) {
+  const debut = Number(d?.heureDebut);
+  const fin = Number(d?.heureFin);
+  return !isNaN(debut) && !isNaN(fin) && fin > debut;
+}
+
+function billedDaysCount(dates) {
+  if (!Array.isArray(dates)) return 0;
+  let days = 0;
+  for (const d of dates) {
+    if (isValidWorkDay(d) && d?.billable !== false) {
+      days += 1;
+    }
+  }
+  return days;
+}
+
+async function buildFirstChargeIdMapForDates(datesSet, excludeChargeId) {
+  // Build earliest charge id per (salarieId|date); scans existing personnel charges.
+  // Note: we scan all "Charges de personnel" because per-day data is inside JSON, not in columns.
+  const rows = await dbQuery('SELECT id, personnel_data FROM charges WHERE type = ?', ['Charges de personnel']);
+  const map = new Map(); // key => earliestChargeId
+  const excludeIdStr = excludeChargeId ? String(excludeChargeId) : null;
+
+  for (const row of rows || []) {
+    const rowIdStr = String(row.id);
+    if (excludeIdStr && rowIdStr === excludeIdStr) continue;
+
+    let personnel = [];
+    try {
+      personnel = row.personnel_data ? JSON.parse(row.personnel_data) : [];
+    } catch {
+      personnel = [];
+    }
+    for (const p of Array.isArray(personnel) ? personnel : []) {
+      const salarieId = String(p?.salarieId || '');
+      if (!salarieId) continue;
+      for (const d of Array.isArray(p?.dates) ? p.dates : []) {
+        const dd = d?.date;
+        if (!dd || !datesSet.has(dd)) continue;
+        const key = `${salarieId}|${dd}`;
+        const prev = map.get(key);
+        if (!prev || Number(row.id) < Number(prev)) {
+          map.set(key, Number(row.id));
+        }
+      }
+    }
+  }
+  return map;
+}
+
+async function normalizePersonnelAndBudget(personnel, { excludeChargeId } = {}) {
+  const normalized = [];
+  const targetDates = new Set();
+  for (const p of personnel || []) {
+    for (const d of p?.dates || []) {
+      if (d?.date) targetDates.add(d.date);
+    }
+  }
+
+  const firstMap = await buildFirstChargeIdMapForDates(targetDates, excludeChargeId);
+  let recalculatedBudget = 0;
+
+  for (const p of Array.isArray(personnel) ? personnel : []) {
+    if (p?.isTransportFee) {
+      // transport fee entries remain as-is
+      const amount = Number(p.amount ?? p.total ?? 0);
+      normalized.push({ ...p });
+      recalculatedBudget += amount;
+      continue;
+    }
+
+    const salarieId = String(p?.salarieId || '');
+    const newDates = (p?.dates || []).map(d => {
+      if (!d?.date) return { ...d, billable: false };
+      const key = `${salarieId}|${d.date}`;
+      // If there is an earlier charge id for this salarié/date: not billable here
+      // If none: current is first => billable true
+      const earliest = firstMap.get(key);
+      const billable = earliest == null ? true : (excludeChargeId ? Number(excludeChargeId) === Number(earliest) : false);
+      return { ...d, billable };
+    });
+
+    const tx = Number(p?.tauxHoraire || 0);
+    const billedDays = billedDaysCount(newDates);
+    const total = tx * (billedDays * 7);
+
+    const realHours = (p?.dates || []).reduce((sum, d) => {
+      const debut = Number(d?.heureDebut);
+      const fin = Number(d?.heureFin);
+      return (!isNaN(debut) && !isNaN(fin) && fin > debut) ? sum + (fin - debut) : sum;
+    }, 0);
+
+    normalized.push({
+      ...p,
+      dates: newDates,
+      total,
+      totalHeures: realHours
+    });
+    recalculatedBudget += total;
+  }
+
+  return { normalizedPersonnel: normalized, recalculatedBudget };
+}
+
+// -------------------- END NEW HELPERS --------------------
+
 async function createCharge(data) {
   console.log('createCharge called with data:', JSON.stringify(data, null, 2));
   
@@ -115,9 +224,21 @@ async function createCharge(data) {
       console.error('Error calculating Services extérieurs budget:', err);
     }
   }
+
+  // NEW: Normalize personnel and recalc budget server-side (source of truth)
+  let personnelData = null;
+  if (data.type === 'Charges de personnel' && Array.isArray(data.personnel)) {
+    try {
+      const { normalizedPersonnel, recalculatedBudget } = await normalizePersonnelAndBudget(data.personnel, { excludeChargeId: null });
+      personnelData = JSON.stringify(normalizedPersonnel);
+      budget = recalculatedBudget;
+    } catch (e) {
+      console.error('Error normalizing personnel:', e);
+    }
+  }
   
   // Fallback to provided budget/montant if calculation failed
-  budget = budget || data.budget || data.montant;
+  budget = budget ?? data.budget ?? data.montant;
   budget = Number(budget);
   
   if (budget == null || Number.isNaN(budget)) {
@@ -132,7 +253,7 @@ async function createCharge(data) {
   let piecesData = null;
   let servicesData = null;
   let interimData = null;
-  let personnelData = null;
+  // personnelData already prepared above if applicable
 
   switch (data.type) {
     case 'Achat':
@@ -148,7 +269,7 @@ async function createCharge(data) {
       interimData = data.ouvriers ? JSON.stringify(data.ouvriers) : null;
       break;
     case 'Charges de personnel':
-      personnelData = data.personnel ? JSON.stringify(data.personnel) : null;
+      // already set personnelData
       break;
   }
 
@@ -430,6 +551,18 @@ async function getChargeById(id) {
 async function updateCharge(id, data) {
   const sets = [];
   const vals = [];
+
+  // NEW: If updating Charges de personnel with personnel array, normalize and recalc first
+  if (data.type === 'Charges de personnel' && Array.isArray(data.personnel)) {
+    try {
+      const { normalizedPersonnel, recalculatedBudget } = await normalizePersonnelAndBudget(data.personnel, { excludeChargeId: id });
+      // Override incoming fields with normalized values
+      data.personnel = normalizedPersonnel;
+      data.budget = recalculatedBudget;
+    } catch (e) {
+      console.error('Error normalizing personnel on update:', e);
+    }
+  }
 
   if (data.type !== undefined) {
     sets.push('type = ?');
