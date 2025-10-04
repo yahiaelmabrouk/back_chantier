@@ -7,23 +7,37 @@ const ChargeModel = require('../models/Charge'); // add: to auto-create initial 
 router.get('/', async (req, res) => {
   try {
     const chantiers = await Chantier.getAll();
-    res.json(chantiers);
+    // NEW: attach plombier from charges/personnel where prestation === 'plombier'
+    let plombiersMap = {};
+    try {
+      plombiersMap = await Chantier.getPlombiersMap();
+    } catch (e) {
+      console.error('getPlombiersMap failed:', e);
+    }
+    const enriched = Array.isArray(chantiers)
+      ? chantiers.map(c => ({ ...c, plombier: plombiersMap[c.id] || null }))
+      : [];
+    res.json(enriched);
   } catch (error) {
     console.error('Error getting chantiers:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Get single chantier by ID
+// Get single chantier by ID (enriched with plombier)
 router.get('/:id', async (req, res) => {
   try {
     const chantier = await Chantier.getById(req.params.id);
-    
     if (!chantier) {
       return res.status(404).json({ message: 'Chantier not found' });
     }
-    
-    res.json(chantier);
+    let plombiersMap = {};
+    try {
+      plombiersMap = await Chantier.getPlombiersMap();
+    } catch (e) {
+      console.error('getPlombiersMap failed:', e);
+    }
+    res.json({ ...chantier, plombier: plombiersMap[chantier.id] || null });
   } catch (error) {
     console.error('Error getting chantier:', error);
     res.status(500).json({ error: 'Server error' });

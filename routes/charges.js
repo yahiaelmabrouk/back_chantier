@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const ChargeModel = require("../models/Charge");
 const FraisTransportConfig = require("../models/FraisTransportConfig"); // Import the transport config model
+const Chantier = require("../models/Chantier");
+const { pool } = require("../config/database");
 
 function mapChargeRow(row) {
   if (!row) return null;
@@ -99,6 +101,15 @@ router.post("/", async (req, res) => {
     if (!chantierId)
       return res.status(400).json({ error: "chantierId is required" });
 
+    // NEW: enforce chantier status (no changes allowed when fermé)
+    const chantier = await Chantier.getById(chantierId);
+    if (!chantier) {
+      return res.status(404).json({ error: "Chantier not found" });
+    }
+    if (chantier.etat === "fermé") {
+      return res.status(403).json({ error: "Charges non modifiables: chantier fermé" });
+    }
+
     const budget = payload.budget != null
       ? Number(payload.budget)
       : payload.montant != null
@@ -139,6 +150,29 @@ router.put("/:id", async (req, res) => {
   try {
     const id = req.params.id;
 
+    // NEW: enforce chantier status for updates
+    let chantierId = null;
+    try {
+      const [rows] = await pool.execute(
+        "SELECT chantier_id FROM charges WHERE id = ?",
+        [id]
+      );
+      chantierId = rows?.[0]?.chantier_id || null;
+    } catch (_) {
+      chantierId = null;
+    }
+    chantierId = chantierId || req.body?.chantierId || req.body?.chantier_id || null;
+
+    if (chantierId) {
+      const chantier = await Chantier.getById(chantierId);
+      if (!chantier) {
+        return res.status(404).json({ error: "Chantier not found" });
+      }
+      if (chantier.etat === "fermé") {
+        return res.status(403).json({ error: "Charges non modifiables: chantier fermé" });
+      }
+    }
+
     // Ensure personnel entries are persisted properly on update
     const body = { ...req.body };
     if (body.type === "Charges de personnel" && Array.isArray(body.personnel)) {
@@ -158,7 +192,6 @@ router.put("/:id", async (req, res) => {
   }
 })  ;
 
-// DELETE /api/charges/:id
 router.delete("/:id", async (req, res) => {
   try {
     await ChargeModel.deleteCharge(req.params.id);
@@ -213,7 +246,6 @@ router.post("/billable/evaluate", async (req, res) => {
     // We'll fake a normalize with empty personnel; instead we implement a direct small query here:
 
     const rows = await ChargeModel.getChargesByChantier ? null : null; // not used; we go direct via DB inside model file
-    const { pool } = require('../config/database');
     const [rawRows] = await pool.execute('SELECT id, personnel_data FROM charges WHERE type = ?', ['Charges de personnel']);
     const firstMap = new Map();
     for (const row of rawRows || []) {
