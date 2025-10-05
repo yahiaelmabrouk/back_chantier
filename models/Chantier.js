@@ -27,6 +27,7 @@ class Chantier {
       const {
         nomChantier,
         numAttachement,
+        numeroCommande, // NEW
         client,
         natureTravail,
         adresseExecution,
@@ -38,7 +39,7 @@ class Chantier {
         heureFin,
         dateSaisie,
         etat,
-        numBonFacture // new
+        numBonFacture
       } = data;
 
       // normalize helpers
@@ -68,6 +69,7 @@ class Chantier {
         INSERT INTO chantiers (
           nomChantier, 
           numAttachement, 
+          numeroCommande,         -- NEW
           client, 
           natureTravail, 
           adresseExecution, 
@@ -80,12 +82,13 @@ class Chantier {
           dateSaisie, 
           etat,
           numBonFacture
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       const values = [
         nomChantier,
         numAttachement,
+        numeroCommande || null,  // NEW
         client,
         natureTravail,
         adresseExecution || null,
@@ -97,7 +100,7 @@ class Chantier {
         toTime(heureFin),
         toMySQLDate(dateSaisie) || new Date().toISOString().split('T')[0],
         etat || 'en cours',
-        numBonFacture || null // new
+        numBonFacture || null
       ];
 
       console.log('SQL:', sql);
@@ -118,6 +121,7 @@ class Chantier {
       const {
         nomChantier,
         numAttachement,
+        numeroCommande, // NEW
         client,
         natureTravail,
         adresseExecution,
@@ -129,7 +133,7 @@ class Chantier {
         heureFin,
         dateSaisie,
         etat,
-        numBonFacture // new
+        numBonFacture
       } = data;
 
       // normalize helpers
@@ -155,19 +159,20 @@ class Chantier {
       };
 
       const sql = `
-        UPDATE chantiers SET 
-          nomChantier = ?, 
-          numAttachement = ?, 
-          client = ?, 
-          natureTravail = ?, 
-          adresseExecution = ?, 
-          lieu = ?, 
-          prixPrestation = ?, 
-          dateDebut = ?, 
+        UPDATE chantiers SET
+          nomChantier = ?,
+          numAttachement = ?,
+          numeroCommande = ?,   -- NEW
+          client = ?,
+          natureTravail = ?,
+          adresseExecution = ?,
+          lieu = ?,
+          prixPrestation = ?,
+          dateDebut = ?,
           heureDebut = ?,
-          dateFin = ?, 
+          dateFin = ?,
           heureFin = ?,
-          dateSaisie = ?, 
+          dateSaisie = ?,
           etat = ?,
           numBonFacture = ?
         WHERE id = ?
@@ -176,6 +181,7 @@ class Chantier {
       const values = [
         nomChantier,
         numAttachement,
+        numeroCommande || null, // NEW
         client,
         natureTravail,
         adresseExecution || null,
@@ -187,7 +193,7 @@ class Chantier {
         toTime(heureFin),
         toMySQLDate(dateSaisie) || new Date().toISOString().split('T')[0],
         etat || 'en cours',
-        numBonFacture || null, // new
+        numBonFacture || null,
         id
       ];
 

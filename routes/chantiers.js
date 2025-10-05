@@ -65,10 +65,17 @@ router.post('/', async (req, res) => {
       });
     }
     
+    // Normalize numeroCommande from camelCase or snake_case
+    const numeroCommandeRaw = (req.body.numeroCommande ?? req.body.numero_commande);
+    const numeroCommande = typeof numeroCommandeRaw === 'string'
+      ? numeroCommandeRaw.trim()
+      : (numeroCommandeRaw != null ? String(numeroCommandeRaw).trim() : '');
+
     // Prepare data for database
     const chantierData = {
       nomChantier: req.body.nomChantier.trim(),
       numAttachement: req.body.numAttachement.trim(),
+      numeroCommande: numeroCommande || null, // FIX: accept both naming styles
       client: req.body.client.trim(),
       natureTravail: req.body.natureTravail.trim(),
       adresseExecution: req.body.adresseExecution ? req.body.adresseExecution.trim() : null,
@@ -78,7 +85,7 @@ router.post('/', async (req, res) => {
       dateFin: req.body.dateFin || null,
       dateSaisie: req.body.dateSaisie || new Date().toISOString().split('T')[0],
       etat: req.body.etat || 'en cours',
-      numBonFacture: req.body.numBonFacture || null // new
+      numBonFacture: req.body.numBonFacture || null
     };
     
     console.log('Processed data for database:', chantierData);
@@ -158,7 +165,6 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    // Load existing to support partial updates
     const existing = await Chantier.getById(id);
     if (!existing) {
       return res.status(404).json({ message: 'Chantier not found' });
@@ -169,9 +175,15 @@ router.put('/:id', async (req, res) => {
 
     // Normalize fields if present in payload
     const toNullIfEmpty = (v) => (v === '' ? null : v);
-    ['adresseExecution', 'lieu', 'dateDebut', 'dateFin', 'dateSaisie', 'numBonFacture'].forEach((k) => {
+    ['adresseExecution', 'lieu', 'dateDebut', 'dateFin', 'dateSaisie', 'numBonFacture', 'numeroCommande'].forEach((k) => {
       if (k in req.body) merged[k] = toNullIfEmpty(req.body[k]);
     });
+
+    // FIX: Accept snake_case numero_commande as well
+    if ('numero_commande' in req.body && !('numeroCommande' in req.body)) {
+      const raw = req.body.numero_commande;
+      merged.numeroCommande = toNullIfEmpty(typeof raw === 'string' ? raw.trim() : (raw != null ? String(raw).trim() : ''));
+    }
 
     if (req.body.prixPrestation !== undefined && req.body.prixPrestation !== null) {
       merged.prixPrestation = parseFloat(req.body.prixPrestation);
@@ -180,6 +192,7 @@ router.put('/:id', async (req, res) => {
 
     if (typeof req.body.nomChantier === 'string') merged.nomChantier = req.body.nomChantier.trim();
     if (typeof req.body.numAttachement === 'string') merged.numAttachement = req.body.numAttachement.trim();
+    if (typeof req.body.numeroCommande === 'string') merged.numeroCommande = req.body.numeroCommande.trim(); // keep camelCase
     if (typeof req.body.client === 'string') merged.client = req.body.client.trim();
     if (typeof req.body.natureTravail === 'string') merged.natureTravail = req.body.natureTravail.trim();
     if (typeof req.body.adresseExecution === 'string') merged.adresseExecution = req.body.adresseExecution.trim();
