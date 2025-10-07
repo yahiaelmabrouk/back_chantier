@@ -49,33 +49,35 @@ router.post('/', async (req, res) => {
   try {
     console.log('Received data:', req.body);
     
-    // Validate required fields
-    const requiredFields = ['numAttachement', 'client', 'natureTravail', 'nomChantier'];
+    // Validate required fields (remove numAttachement here)
+    const requiredFields = ['client', 'natureTravail', 'nomChantier'];
     const missingFields = [];
-    
     for (const field of requiredFields) {
       if (!req.body[field] || req.body[field].trim() === '') {
         missingFields.push(field);
       }
     }
-    
     if (missingFields.length > 0) {
       return res.status(400).json({ 
         error: `Missing required fields: ${missingFields.join(', ')}` 
       });
     }
-    
-    // Normalize numeroCommande from camelCase or snake_case
+
+    // Normalize numeroCommande (camel/snake) and numAttachement (camel/snake) as optional
     const numeroCommandeRaw = (req.body.numeroCommande ?? req.body.numero_commande);
     const numeroCommande = typeof numeroCommandeRaw === 'string'
       ? numeroCommandeRaw.trim()
       : (numeroCommandeRaw != null ? String(numeroCommandeRaw).trim() : '');
 
-    // Prepare data for database
+    const numAttRaw = (req.body.numAttachement ?? req.body.num_attachement);
+    const numAttachement =
+      typeof numAttRaw === 'string' && numAttRaw.trim() !== '' ? numAttRaw.trim() : null;
+
+    // Prepare data (both keys optional/nullable)
     const chantierData = {
       nomChantier: req.body.nomChantier.trim(),
-      numAttachement: req.body.numAttachement.trim(),
-      numeroCommande: numeroCommande || null, // FIX: accept both naming styles
+      numAttachement,
+      numeroCommande: numeroCommande || null,
       client: req.body.client.trim(),
       natureTravail: req.body.natureTravail.trim(),
       adresseExecution: req.body.adresseExecution ? req.body.adresseExecution.trim() : null,
@@ -88,6 +90,13 @@ router.post('/', async (req, res) => {
       numBonFacture: req.body.numBonFacture || null
     };
     
+    // NEW: enforce "annulé" rule (etat and zero budget)
+    const etatInput = (req.body.etat || '').toString().toLowerCase();
+    if (etatInput === 'annulé' || etatInput === 'annule') {
+      chantierData.etat = 'annulé';
+      chantierData.prixPrestation = 0;
+    }
+
     console.log('Processed data for database:', chantierData);
     
     // Create new chantier using the model method
@@ -175,28 +184,42 @@ router.put('/:id', async (req, res) => {
 
     // Normalize fields if present in payload
     const toNullIfEmpty = (v) => (v === '' ? null : v);
-    ['adresseExecution', 'lieu', 'dateDebut', 'dateFin', 'dateSaisie', 'numBonFacture', 'numeroCommande'].forEach((k) => {
+    ['adresseExecution','lieu','dateDebut','dateFin','dateSaisie','numBonFacture','numeroCommande','numAttachement'].forEach((k) => {
       if (k in req.body) merged[k] = toNullIfEmpty(req.body[k]);
     });
 
-    // FIX: Accept snake_case numero_commande as well
+    // Accept snake_case variants and coerce empty to NULL
     if ('numero_commande' in req.body && !('numeroCommande' in req.body)) {
       const raw = req.body.numero_commande;
       merged.numeroCommande = toNullIfEmpty(typeof raw === 'string' ? raw.trim() : (raw != null ? String(raw).trim() : ''));
     }
+    if ('num_attachement' in req.body && !('numAttachement' in req.body)) {
+      const raw = req.body.num_attachement;
+      merged.numAttachement = toNullIfEmpty(typeof raw === 'string' ? raw.trim() : (raw != null ? String(raw).trim() : ''));
+    }
 
+    if ('numAttachement' in req.body) {
+      const v = req.body.numAttachement;
+      merged.numAttachement = (typeof v === 'string' ? v.trim() : v) || null;
+    }
     if (req.body.prixPrestation !== undefined && req.body.prixPrestation !== null) {
       merged.prixPrestation = parseFloat(req.body.prixPrestation);
       if (Number.isNaN(merged.prixPrestation)) merged.prixPrestation = null;
     }
 
     if (typeof req.body.nomChantier === 'string') merged.nomChantier = req.body.nomChantier.trim();
-    if (typeof req.body.numAttachement === 'string') merged.numAttachement = req.body.numAttachement.trim();
     if (typeof req.body.numeroCommande === 'string') merged.numeroCommande = req.body.numeroCommande.trim(); // keep camelCase
     if (typeof req.body.client === 'string') merged.client = req.body.client.trim();
     if (typeof req.body.natureTravail === 'string') merged.natureTravail = req.body.natureTravail.trim();
     if (typeof req.body.adresseExecution === 'string') merged.adresseExecution = req.body.adresseExecution.trim();
     if (typeof req.body.numBonFacture === 'string') merged.numBonFacture = req.body.numBonFacture.trim();
+
+    // NEW: enforce "annulé" rule (etat and zero budget)
+    const etatInput = (merged.etat || '').toString().toLowerCase();
+    if (etatInput === 'annulé' || etatInput === 'annule') {
+      merged.etat = 'annulé';
+      merged.prixPrestation = 0;
+    }
 
     const updatedChantier = await Chantier.update(id, merged);
     if (!updatedChantier) {

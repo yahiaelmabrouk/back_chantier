@@ -87,8 +87,8 @@ class Chantier {
 
       const values = [
         nomChantier,
-        numAttachement,
-        numeroCommande || null,  // NEW
+        (numAttachement && String(numAttachement).trim()) || null,
+        (numeroCommande && String(numeroCommande).trim()) || null,
         client,
         natureTravail,
         adresseExecution || null,
@@ -180,8 +180,8 @@ class Chantier {
 
       const values = [
         nomChantier,
-        numAttachement,
-        numeroCommande || null, // NEW
+        (numAttachement && String(numAttachement).trim()) || null,
+        (numeroCommande && String(numeroCommande).trim()) || null,
         client,
         natureTravail,
         adresseExecution || null,

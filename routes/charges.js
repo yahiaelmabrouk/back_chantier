@@ -101,7 +101,7 @@ router.post("/", async (req, res) => {
     if (!chantierId)
       return res.status(400).json({ error: "chantierId is required" });
 
-    // NEW: enforce chantier status (no changes allowed when fermé)
+    // NOTE: Allow charges for 'annulé'; only block 'fermé'
     const chantier = await Chantier.getById(chantierId);
     if (!chantier) {
       return res.status(404).json({ error: "Chantier not found" });
