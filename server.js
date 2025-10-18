@@ -8,7 +8,6 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-// ...existing code...
 app.use(cors({
   origin: [
     'http://localhost:3000',
@@ -16,7 +15,6 @@ app.use(cors({
   ],
   credentials: true
 }));
-// ...existing code...
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -78,6 +76,13 @@ try {
   console.log('✅ Charge routes loaded');
 } catch (error) {
   console.error('❌ Charge routes failed:', error.message);
+}
+
+try {
+  app.use('/api/plombiers', require('./routes/plombiers'));
+  console.log('✅ Plombier routes loaded');
+} catch (error) {
+  console.error('❌ Plombier routes failed:', error.message);
 }
 
 // Optional routes - Remove login from here since we already loaded it

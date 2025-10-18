@@ -24,6 +24,24 @@ class Chantier {
 
   static async create(data) {
     try {
+      // Helper: check uniqueness for identifiers (trimmed); excludes optional id
+      const existsNumAttachement = async (val, excludeId = null) => {
+        if (val == null || String(val).trim() === '') return false;
+        const trimmed = String(val).trim();
+        const sql = `SELECT id FROM chantiers WHERE TRIM(numAttachement) = ? ${excludeId ? 'AND id <> ?' : ''} LIMIT 1`;
+        const params = excludeId ? [trimmed, excludeId] : [trimmed];
+        const [rows] = await pool.execute(sql, params);
+        return rows.length > 0;
+      };
+      const existsNumeroCommande = async (val, excludeId = null) => {
+        if (val == null || String(val).trim() === '') return false;
+        const trimmed = String(val).trim();
+        const sql = `SELECT id FROM chantiers WHERE TRIM(numeroCommande) = ? ${excludeId ? 'AND id <> ?' : ''} LIMIT 1`;
+        const params = excludeId ? [trimmed, excludeId] : [trimmed];
+        const [rows] = await pool.execute(sql, params);
+        return rows.length > 0;
+      };
+
       const {
         nomChantier,
         numAttachement,
@@ -105,12 +123,36 @@ class Chantier {
 
       console.log('SQL:', sql);
       console.log('Values:', values);
+      // App-layer uniqueness guard for clearer error messages
+      if (await existsNumAttachement(values[1])) {
+        const v = values[1];
+        const err = new Error(`numAttachement '${v}' already exists`);
+        err.code = 'APP_DUP_NUM_ATT';
+        throw err;
+      }
+      if (await existsNumeroCommande(values[2])) {
+        const v = values[2];
+        const err = new Error(`numeroCommande '${v}' already exists`);
+        err.code = 'APP_DUP_NUM_CMD';
+        throw err;
+      }
 
       const [result] = await pool.execute(sql, values);
       
       // Return the created chantier
       return await this.getById(result.insertId);
     } catch (error) {
+      // Map duplicate key errors to friendly messages
+      if (error && (error.code === 'ER_DUP_ENTRY' || /duplicate/i.test(error.message || ''))) {
+        const msg = String(error.message || 'Duplicate entry');
+        if (msg.includes('numAttachement') || msg.includes('uc_chantiers_numAttachement')) {
+          throw new Error('numAttachement already exists');
+        }
+        if (msg.includes('numeroCommande') || msg.includes('uc_chantiers_numeroCommande')) {
+          throw new Error('numeroCommande already exists');
+        }
+        throw new Error('numAttachement or numeroCommande already exists');
+      }
       console.error('Error in create:', error);
       throw error;
     }
@@ -118,6 +160,26 @@ class Chantier {
 
   static async update(id, data) {
     try {
+      // Helper: check uniqueness for identifiers (trimmed); excludes current id
+      const existsNumAttachement = async (val) => {
+        if (val == null || String(val).trim() === '') return false;
+        const trimmed = String(val).trim();
+        const [rows] = await pool.execute(
+          'SELECT id FROM chantiers WHERE TRIM(numAttachement) = ? AND id <> ? LIMIT 1',
+          [trimmed, id]
+        );
+        return rows.length > 0;
+      };
+      const existsNumeroCommande = async (val) => {
+        if (val == null || String(val).trim() === '') return false;
+        const trimmed = String(val).trim();
+        const [rows] = await pool.execute(
+          'SELECT id FROM chantiers WHERE TRIM(numeroCommande) = ? AND id <> ? LIMIT 1',
+          [trimmed, id]
+        );
+        return rows.length > 0;
+      };
+
       const {
         nomChantier,
         numAttachement,
@@ -197,14 +259,38 @@ class Chantier {
         id
       ];
 
+      // Pre-execution uniqueness checks for clearer errors and to avoid partial updates
+      if (await existsNumAttachement(values[1])) {
+        const v = values[1];
+        const err = new Error(`numAttachement '${v}' already exists`);
+        err.code = 'APP_DUP_NUM_ATT';
+        throw err;
+      }
+      if (await existsNumeroCommande(values[2])) {
+        const v = values[2];
+        const err = new Error(`numeroCommande '${v}' already exists`);
+        err.code = 'APP_DUP_NUM_CMD';
+        throw err;
+      }
+
       const [result] = await pool.execute(sql, values);
       
       if (result.affectedRows === 0) {
         return null;
       }
-      
+
       return await this.getById(id);
     } catch (error) {
+      if (error && (error.code === 'ER_DUP_ENTRY' || /duplicate/i.test(error.message || ''))) {
+        const msg = String(error.message || 'Duplicate entry');
+        if (msg.includes('numAttachement') || msg.includes('uc_chantiers_numAttachement')) {
+          throw new Error('numAttachement already exists');
+        }
+        if (msg.includes('numeroCommande') || msg.includes('uc_chantiers_numeroCommande')) {
+          throw new Error('numeroCommande already exists');
+        }
+        throw new Error('numAttachement or numeroCommande already exists');
+      }
       console.error('Error in update:', error);
       throw error;
     }

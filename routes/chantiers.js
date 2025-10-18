@@ -49,37 +49,38 @@ router.post('/', async (req, res) => {
   try {
     console.log('Received data:', req.body);
     
-    // Validate required fields (remove numAttachement here)
-    const requiredFields = ['client', 'natureTravail', 'nomChantier'];
-    const missingFields = [];
-    for (const field of requiredFields) {
-      if (!req.body[field] || req.body[field].trim() === '') {
-        missingFields.push(field);
-      }
-    }
+    // Normalize incoming identifiers (accept camelCase and snake_case)
+    const numAttRaw = (req.body.numAttachement ?? req.body.num_attachement);
+    const numeroCommandeRaw = (req.body.numeroCommande ?? req.body.numero_commande);
+
+    const numAttachement = (numAttRaw != null) ? String(numAttRaw).trim() : '';
+    const numeroCommande = (numeroCommandeRaw != null) ? String(numeroCommandeRaw).trim() : '';
+
+    // Validate required fields (both numbers are required now)
+    const requiredChecks = {
+      numAttachement,
+      numeroCommande,
+      client: (req.body.client || '').toString().trim(),
+      natureTravail: (req.body.natureTravail || '').toString().trim(),
+      nomChantier: (req.body.nomChantier || '').toString().trim(),
+    };
+    const missingFields = Object.entries(requiredChecks)
+      .filter(([, v]) => !v || v === '')
+      .map(([k]) => k);
+
     if (missingFields.length > 0) {
       return res.status(400).json({ 
         error: `Missing required fields: ${missingFields.join(', ')}` 
       });
     }
 
-    // Normalize numeroCommande (camel/snake) and numAttachement (camel/snake) as optional
-    const numeroCommandeRaw = (req.body.numeroCommande ?? req.body.numero_commande);
-    const numeroCommande = typeof numeroCommandeRaw === 'string'
-      ? numeroCommandeRaw.trim()
-      : (numeroCommandeRaw != null ? String(numeroCommandeRaw).trim() : '');
-
-    const numAttRaw = (req.body.numAttachement ?? req.body.num_attachement);
-    const numAttachement =
-      typeof numAttRaw === 'string' && numAttRaw.trim() !== '' ? numAttRaw.trim() : null;
-
-    // Prepare data (both keys optional/nullable)
+    // Prepare data (both keys are mandatory, trimmed)
     const chantierData = {
-      nomChantier: req.body.nomChantier.trim(),
+      nomChantier: requiredChecks.nomChantier,
       numAttachement,
-      numeroCommande: numeroCommande || null,
-      client: req.body.client.trim(),
-      natureTravail: req.body.natureTravail.trim(),
+      numeroCommande,
+      client: requiredChecks.client,
+      natureTravail: requiredChecks.natureTravail,
       adresseExecution: req.body.adresseExecution ? req.body.adresseExecution.trim() : null,
       lieu: req.body.lieu || null,
       prixPrestation: req.body.prixPrestation ? parseFloat(req.body.prixPrestation) : null,
@@ -164,7 +165,27 @@ router.post('/', async (req, res) => {
     res.status(201).json(response);
   } catch (error) {
     console.error('Error creating chantier:', error);
-    res.status(400).json({ 
+    // Map duplicate identifiers to 409 with structured payload
+    const body = req.body || {};
+    const msg = (error && error.message) || '';
+    const isDupNumAtt = error.code === 'APP_DUP_NUM_ATT' || /numAttachement.*already exists/i.test(msg);
+    const isDupNumCmd = error.code === 'APP_DUP_NUM_CMD' || /numeroCommande.*already exists/i.test(msg);
+    if (isDupNumAtt || isDupNumCmd) {
+      const field = isDupNumAtt ? 'numAttachement' : 'numeroCommande';
+      let value = '';
+      const m = msg.match(/'(.+?)'/);
+      if (m && m[1]) value = m[1];
+      if (!value) {
+        value = String(body[field] ?? body[field === 'numAttachement' ? 'num_attachement' : 'numero_commande'] ?? '');
+      }
+      return res.status(409).json({
+        code: 'DUPLICATE',
+        field,
+        value,
+        message: `${field} existe déjà`
+      });
+    }
+    return res.status(400).json({
       error: error.message || 'Failed to create chantier'
     });
   }
@@ -182,37 +203,49 @@ router.put('/:id', async (req, res) => {
     // Merge existing fields with incoming partial payload
     const merged = { ...existing, ...req.body };
 
-    // Normalize fields if present in payload
+    // Normalize fields if present in payload (exclude numAttachement/numeroCommande from auto-null)
     const toNullIfEmpty = (v) => (v === '' ? null : v);
-    ['adresseExecution','lieu','dateDebut','dateFin','dateSaisie','numBonFacture','numeroCommande','numAttachement'].forEach((k) => {
+    ['adresseExecution','lieu','dateDebut','dateFin','dateSaisie','numBonFacture'].forEach((k) => {
       if (k in req.body) merged[k] = toNullIfEmpty(req.body[k]);
     });
 
-    // Accept snake_case variants and coerce empty to NULL
+    // Accept snake_case variants for identifiers
     if ('numero_commande' in req.body && !('numeroCommande' in req.body)) {
       const raw = req.body.numero_commande;
-      merged.numeroCommande = toNullIfEmpty(typeof raw === 'string' ? raw.trim() : (raw != null ? String(raw).trim() : ''));
+      merged.numeroCommande = (raw != null) ? String(raw).trim() : '';
     }
     if ('num_attachement' in req.body && !('numAttachement' in req.body)) {
       const raw = req.body.num_attachement;
-      merged.numAttachement = toNullIfEmpty(typeof raw === 'string' ? raw.trim() : (raw != null ? String(raw).trim() : ''));
+      merged.numAttachement = (raw != null) ? String(raw).trim() : '';
     }
 
-    if ('numAttachement' in req.body) {
-      const v = req.body.numAttachement;
-      merged.numAttachement = (typeof v === 'string' ? v.trim() : v) || null;
+    // If client tries to clear required identifiers, reject
+    if ('numAttachement' in req.body && String(req.body.numAttachement ?? '').trim() === '') {
+      return res.status(400).json({ error: 'numAttachement is required and cannot be empty' });
     }
-    if (req.body.prixPrestation !== undefined && req.body.prixPrestation !== null) {
-      merged.prixPrestation = parseFloat(req.body.prixPrestation);
-      if (Number.isNaN(merged.prixPrestation)) merged.prixPrestation = null;
+    if ('numeroCommande' in req.body && String(req.body.numeroCommande ?? '').trim() === '') {
+      return res.status(400).json({ error: 'numeroCommande is required and cannot be empty' });
+    }
+    if ('num_attachement' in req.body && String(req.body.num_attachement ?? '').trim() === '') {
+      return res.status(400).json({ error: 'num_attachement is required and cannot be empty' });
+    }
+    if ('numero_commande' in req.body && String(req.body.numero_commande ?? '').trim() === '') {
+      return res.status(400).json({ error: 'numero_commande is required and cannot be empty' });
     }
 
+    // Trim string fields if present
+    if ('numAttachement' in merged) merged.numAttachement = String(merged.numAttachement).trim();
+    if ('numeroCommande' in merged) merged.numeroCommande = String(merged.numeroCommande).trim();
     if (typeof req.body.nomChantier === 'string') merged.nomChantier = req.body.nomChantier.trim();
-    if (typeof req.body.numeroCommande === 'string') merged.numeroCommande = req.body.numeroCommande.trim(); // keep camelCase
     if (typeof req.body.client === 'string') merged.client = req.body.client.trim();
     if (typeof req.body.natureTravail === 'string') merged.natureTravail = req.body.natureTravail.trim();
     if (typeof req.body.adresseExecution === 'string') merged.adresseExecution = req.body.adresseExecution.trim();
     if (typeof req.body.numBonFacture === 'string') merged.numBonFacture = req.body.numBonFacture.trim();
+
+    if (req.body.prixPrestation !== undefined && req.body.prixPrestation !== null) {
+      merged.prixPrestation = parseFloat(req.body.prixPrestation);
+      if (Number.isNaN(merged.prixPrestation)) merged.prixPrestation = null;
+    }
 
     // NEW: enforce "annulé" rule (etat and zero budget)
     const etatInput = (merged.etat || '').toString().toLowerCase();
@@ -228,6 +261,26 @@ router.put('/:id', async (req, res) => {
     res.json(updatedChantier);
   } catch (error) {
     console.error('Error updating chantier:', error);
+    // Map duplicate identifiers to 409 with structured payload
+    const body = req.body || {};
+    const msg = (error && error.message) || '';
+    const isDupNumAtt = error.code === 'APP_DUP_NUM_ATT' || /numAttachement.*already exists/i.test(msg);
+    const isDupNumCmd = error.code === 'APP_DUP_NUM_CMD' || /numeroCommande.*already exists/i.test(msg);
+    if (isDupNumAtt || isDupNumCmd) {
+      const field = isDupNumAtt ? 'numAttachement' : 'numeroCommande';
+      let value = '';
+      const m = msg.match(/'(.+?)'/);
+      if (m && m[1]) value = m[1];
+      if (!value) {
+        value = String(body[field] ?? body[field === 'numAttachement' ? 'num_attachement' : 'numero_commande'] ?? '');
+      }
+      return res.status(409).json({
+        code: 'DUPLICATE',
+        field,
+        value,
+        message: `${field} existe déjà`
+      });
+    }
     res.status(400).json({ error: error.message });
   }
 });
