@@ -136,7 +136,73 @@ router.post("/", async (req, res) => {
     console.log('Creating charge with data:', { ...toCreate, personnel_data: Array.isArray(payload.personnel) ? '[...]' : undefined }); // Debug log
 
     const createdRow = await ChargeModel.createCharge(toCreate);
-    const mapped = mapChargeRow(createdRow);
+    let mapped = mapChargeRow(createdRow);
+
+    // Safety net: if a long chantier personnel charge somehow saved with 0 budget, recalc
+    if (
+      payload.type === "Charges de personnel" &&
+      mapped && Number(mapped.budget) === 0 &&
+      Array.isArray(payload.personnel) && payload.personnel.some(p => Array.isArray(p.dates) && p.dates.length > 0)
+    ) {
+      // Minimal in-route recalculation: 140€ * working days, excluding weekends/holidays
+      const isWeekend = (ds) => {
+        const d = new Date(`${ds}T00:00:00Z`);
+        const wd = d.getUTCDay();
+        return wd === 0 || wd === 6;
+      };
+      const easterDate = (year) => {
+        const a = year % 19;
+        const b = Math.floor(year / 100);
+        const c = year % 100;
+        const d = Math.floor(b / 4);
+        const e = b % 4;
+        const f = Math.floor((b + 8) / 25);
+        const g = Math.floor((b - f + 1) / 3);
+        const h = (19 * a + b - d - g + 15) % 30;
+        const i = Math.floor(c / 4);
+        const k = c % 4;
+        const l = (32 + 2 * e + 2 * i - h - k) % 7;
+        const m = Math.floor((a + 11 * h + 22 * l) / 451);
+        const month = Math.floor((h + l - 7 * m + 114) / 31);
+        const day = ((h + l - 7 * m + 114) % 31) + 1;
+        return new Date(Date.UTC(year, month - 1, day));
+      };
+      const addDaysUTC = (d, n) => { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; };
+      const fmt = (d) => {
+        const y = d.getUTCFullYear();
+        const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(d.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${dd}`;
+      };
+      const holidaysForYear = (y) => {
+        const e = easterDate(y);
+        const list = new Set([
+          `${y}-01-01`, `${y}-05-01`, `${y}-05-08`, `${y}-07-14`, `${y}-08-15`, `${y}-11-01`, `${y}-11-11`, `${y}-12-25`,
+          fmt(addDaysUTC(e, 1)), fmt(addDaysUTC(e, 39)), fmt(addDaysUTC(e, 50))
+        ]);
+        return list;
+      };
+      const isHoliday = (ds) => {
+        const d = new Date(`${ds}T00:00:00Z`);
+        const y = d.getUTCFullYear();
+        return holidaysForYear(y).has(ds);
+      };
+      const isWorking = (ds) => !isWeekend(ds) && !isHoliday(ds);
+
+      const allDays = payload.personnel.flatMap(p => (p.dates || []).map(d => (typeof d === 'string' ? d : d?.date)).filter(Boolean));
+      const workingDays = new Set(allDays.filter(isWorking));
+      const recalculated = 140 * workingDays.size;
+
+      if (recalculated > 0) {
+        try {
+          const updated = await ChargeModel.updateCharge(mapped._id, { type: mapped.type, budget: recalculated, personnel: mapped.personnel, chantierId: mapped.chantierId });
+          mapped = mapChargeRow(updated);
+        } catch (_) {
+          // If update fails, at least adjust response
+          mapped.budget = recalculated;
+        }
+      }
+    }
 
     res.status(201).json(mapped || createdRow);
   } catch (err) {

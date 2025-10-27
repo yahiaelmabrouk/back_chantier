@@ -1,5 +1,6 @@
 const { pool } = require('../config/database');
 const db = require('../config/database');
+const Chantier = require('./Chantier');
 const { QueryTypes } = require('sequelize'); // add: to support Sequelize query types
 
 // Prefer mysql2/promise pool.execute when available, fallback to db.execute/db.query (Sequelize-aware)
@@ -106,6 +107,94 @@ function billedDaysCount(dates) {
   return days;
 }
 
+// -------------------- FRENCH HOLIDAYS & WORKING DAYS --------------------
+function easterDate(year) {
+  // Meeus/Jones/Butcher algorithm for Gregorian Easter
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31); // 3=March, 4=April
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function addDaysUTC(dateUTC, days) {
+  const d = new Date(dateUTC.getTime());
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+}
+
+function fmtDateUTC(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function frenchPublicHolidays(year) {
+  const easter = easterDate(year);
+  const easterMonday = addDaysUTC(easter, 1);
+  const ascension = addDaysUTC(easter, 39);
+  const pentecostMonday = addDaysUTC(easter, 50);
+  // Fixed dates in UTC to avoid TZ skew
+  const list = [
+    `${year}-01-01`, // New Year
+    `${year}-05-01`, // Labour Day
+    `${year}-05-08`, // Victory in Europe Day
+    `${year}-07-14`, // Bastille Day
+    `${year}-08-15`, // Assumption
+    `${year}-11-01`, // All Saints' Day
+    `${year}-11-11`, // Armistice
+    `${year}-12-25`, // Christmas
+    fmtDateUTC(easterMonday),
+    fmtDateUTC(ascension),
+    fmtDateUTC(pentecostMonday),
+  ];
+  return new Set(list);
+}
+
+function isWeekendUTC(dateStr) {
+  // Use UTC to make weekday stable regardless of server TZ
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const day = d.getUTCDay(); // 0=Sun,6=Sat
+  return day === 0 || day === 6;
+}
+
+function isFrenchHoliday(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const y = d.getUTCFullYear();
+  const hols = frenchPublicHolidays(y);
+  return hols.has(dateStr);
+}
+
+function isWorkingDay(dateStr) {
+  if (!dateStr) return false;
+  if (isWeekendUTC(dateStr)) return false;
+  if (isFrenchHoliday(dateStr)) return false;
+  return true;
+}
+
+function enumerateDatesInclusiveUTC(startStr, endStr) {
+  const arr = [];
+  if (!startStr || !endStr) return arr;
+  const start = new Date(`${startStr}T00:00:00Z`);
+  const end = new Date(`${endStr}T00:00:00Z`);
+  if (isNaN(start) || isNaN(end) || start > end) return arr;
+  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    arr.push(fmtDateUTC(d));
+  }
+  return arr;
+}
+
 async function buildFirstChargeIdMapForDates(datesSet, excludeChargeId) {
   // Build earliest charge id per (salarieId|date); scans existing personnel charges.
   // Note: we scan all "Charges de personnel" because per-day data is inside JSON, not in columns.
@@ -140,7 +229,9 @@ async function buildFirstChargeIdMapForDates(datesSet, excludeChargeId) {
   return map;
 }
 
-async function normalizePersonnelAndBudget(personnel, { excludeChargeId } = {}) {
+async function normalizePersonnelAndBudget(personnel, { excludeChargeId, chantierId } = {}) {
+  console.log('=== normalizePersonnelAndBudget START ===');
+  console.log('chantierId:', chantierId, 'excludeChargeId:', excludeChargeId, 'personnel count:', personnel?.length);
   const normalized = [];
   const targetDates = new Set();
   for (const p of personnel || []) {
@@ -152,6 +243,68 @@ async function normalizePersonnelAndBudget(personnel, { excludeChargeId } = {}) 
   const firstMap = await buildFirstChargeIdMapForDates(targetDates, excludeChargeId);
   let recalculatedBudget = 0;
 
+  // Determine chantier duration for long/short mode
+  let isLongChantier = false;
+  let chantierDates = { start: null, end: null };
+  console.log('Determining long/short mode...');
+  if (chantierId) {
+    try {
+      const ch = await Chantier.getById(chantierId);
+      if (ch && ch.dateDebut && ch.dateFin) {
+        const toYMD = (v) => {
+          if (!v) return null;
+          if (typeof v === 'string') {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+            if (v.includes('T')) return v.split('T')[0];
+          }
+          try { return new Date(v).toISOString().slice(0,10); } catch { return null; }
+        };
+        const d1 = toYMD(ch.dateDebut);
+        const d2 = toYMD(ch.dateFin);
+        const dates = enumerateDatesInclusiveUTC(d1, d2);
+        isLongChantier = dates.length > 7; // duration > 7 days
+        chantierDates = { start: d1, end: d2 };
+        console.log('Chantier dates:', d1, 'to', d2, '=> days:', dates.length, '=> isLongChantier:', isLongChantier);
+      }
+    } catch (_) {}
+  }
+
+  // Fallback: infer long/short from personnel entries if chantier dates unavailable
+  if (!isLongChantier) {
+    let minDate = null;
+    let maxDate = null;
+    const toYMD = (v) => {
+      if (!v) return null;
+      if (typeof v === 'string') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+        if (v.includes('T')) return v.split('T')[0];
+      }
+      try { return new Date(v).toISOString().slice(0,10); } catch { return null; }
+    };
+    for (const p of Array.isArray(personnel) ? personnel : []) {
+      const dStart = toYMD(p.dateDebut);
+      const dEnd = toYMD(p.dateFin);
+      if (dStart) minDate = !minDate || dStart < minDate ? dStart : minDate;
+      if (dEnd) maxDate = !maxDate || dEnd > maxDate ? dEnd : maxDate;
+      for (const d of Array.isArray(p?.dates) ? p.dates : []) {
+        const dd = toYMD(d?.date || d);
+        if (!dd) continue;
+        minDate = !minDate || dd < minDate ? dd : minDate;
+        maxDate = !maxDate || dd > maxDate ? dd : maxDate;
+      }
+    }
+    if (minDate && maxDate) {
+      const span = enumerateDatesInclusiveUTC(minDate, maxDate);
+      console.log('Fallback: inferred dates:', minDate, 'to', maxDate, '=> days:', span.length);
+      if (span.length > 7) {
+        isLongChantier = true;
+        chantierDates = { start: minDate, end: maxDate };
+        console.log('Fallback detected long chantier');
+      }
+    }
+  }
+  console.log('Final mode: isLongChantier =', isLongChantier);
+
   for (const p of Array.isArray(personnel) ? personnel : []) {
     if (p?.isTransportFee) {
       // transport fee entries remain as-is
@@ -162,25 +315,59 @@ async function normalizePersonnelAndBudget(personnel, { excludeChargeId } = {}) 
     }
 
     const salarieId = String(p?.salarieId || '');
-    const newDates = (p?.dates || []).map(d => {
-      if (!d?.date) return { ...d, billable: false };
-      const key = `${salarieId}|${d.date}`;
+    let candidateDates = Array.isArray(p?.dates) ? p.dates : [];
+    console.log('Processing entry for salarieId:', salarieId, 'dates count:', candidateDates.length, 'isLongChantier:', isLongChantier);
+
+    // For long chantiers, if no valid date strings found, produce baseline working days
+    const hasValidDates = candidateDates.some(d => (d?.date || d) && typeof (d?.date || d) === 'string');
+    if (isLongChantier && !hasValidDates) {
+      console.log('No valid dates found for long chantier, generating baseline working days');
+      const startGuess = p?.dateDebut || chantierDates.start;
+      const endGuess = p?.dateFin || chantierDates.end;
+      if (startGuess && endGuess) {
+        const all = enumerateDatesInclusiveUTC(startGuess, endGuess);
+        candidateDates = all.filter(isWorkingDay).map((ds) => ({ date: ds }));
+      }
+    }
+
+    const newDates = (candidateDates || []).map(d => {
+      const dateStr = typeof d === 'string' ? d : d?.date;
+      if (!dateStr) return { ...d, billable: false };
+      const normalized = { ...d, date: dateStr };
+      const key = `${salarieId}|${dateStr}`;
       // If there is an earlier charge id for this salarié/date: not billable here
       // If none: current is first => billable true
       const earliest = firstMap.get(key);
-      const billable = earliest == null ? true : (excludeChargeId ? Number(excludeChargeId) === Number(earliest) : false);
-      return { ...d, billable };
+      let billable = earliest == null ? true : (excludeChargeId ? Number(excludeChargeId) === Number(earliest) : false);
+      // For long chantiers, never bill weekends or French public holidays
+      if (isLongChantier && !isWorkingDay(dateStr)) {
+        billable = false;
+      }
+      return { ...normalized, billable };
     });
 
-    const tx = Number(p?.tauxHoraire || 0);
-    const billedDays = billedDaysCount(newDates);
-    const total = tx * (billedDays * 7);
+    let total = 0;
+    if (isLongChantier) {
+      // Count only working days that are billable
+      const days = newDates.reduce((cnt, d) => {
+        if (d?.date && d.billable !== false && isWorkingDay(d.date)) return cnt + 1;
+        return cnt;
+      }, 0);
+      total = 140 * days;
+      console.log('Long chantier: counted', days, 'working days => total =', total);
+    } else {
+      const tx = Number(p?.tauxHoraire || 0);
+      const billedDays = billedDaysCount(newDates);
+      total = tx * (billedDays * 7);
+      console.log('Short chantier: tx =', tx, 'billedDays =', billedDays, '=> total =', total);
+    }
 
-    const realHours = (p?.dates || []).reduce((sum, d) => {
+    const realHours = isLongChantier ? 0 : (p?.dates || []).reduce((sum, d) => {
       const debut = Number(d?.heureDebut);
       const fin = Number(d?.heureFin);
       return (!isNaN(debut) && !isNaN(fin) && fin > debut) ? sum + (fin - debut) : sum;
     }, 0);
+    console.log('Entry result: realHours =', realHours, 'total =', total, 'dates with billable:', newDates.filter(x => x.billable !== false).length);
 
     normalized.push({
       ...p,
@@ -191,13 +378,15 @@ async function normalizePersonnelAndBudget(personnel, { excludeChargeId } = {}) 
     recalculatedBudget += total;
   }
 
+  console.log('=== normalizePersonnelAndBudget END: recalculatedBudget =', recalculatedBudget, '===');
   return { normalizedPersonnel: normalized, recalculatedBudget };
 }
 
 // -------------------- END NEW HELPERS --------------------
 
 async function createCharge(data) {
-  console.log('createCharge called with data:', JSON.stringify(data, null, 2));
+  console.log('=== createCharge START ===');
+  console.log('Input data:', JSON.stringify(data, null, 2));
   
   const chantierId = data.chantierId || data.chantier_id;
   
@@ -228,23 +417,33 @@ async function createCharge(data) {
   // NEW: Normalize personnel and recalc budget server-side (source of truth)
   let personnelData = null;
   if (data.type === 'Charges de personnel' && Array.isArray(data.personnel)) {
+    console.log('Personnel charge detected, normalizing...');
     try {
-      const { normalizedPersonnel, recalculatedBudget } = await normalizePersonnelAndBudget(data.personnel, { excludeChargeId: null });
+      const chantierId = data.chantierId || data.chantier_id;
+      console.log('Calling normalizePersonnelAndBudget with chantierId:', chantierId, 'personnel count:', data.personnel.length);
+      const { normalizedPersonnel, recalculatedBudget } = await normalizePersonnelAndBudget(data.personnel, { excludeChargeId: null, chantierId });
+      console.log('Normalization result: recalculatedBudget =', recalculatedBudget, 'normalized count =', normalizedPersonnel.length);
       personnelData = JSON.stringify(normalizedPersonnel);
       budget = recalculatedBudget;
+      console.log('Budget after normalization:', budget);
     } catch (e) {
       console.error('Error normalizing personnel:', e);
     }
   }
   
   // Fallback to provided budget/montant if calculation failed
+  console.log('Budget before fallback:', budget);
   budget = budget ?? data.budget ?? data.montant;
+  console.log('Budget after fallback:', budget);
   budget = Number(budget);
+  console.log('Budget as Number:', budget);
   
   if (budget == null || Number.isNaN(budget)) {
     console.error('budget is invalid:', budget);
     throw new Error('montant is required');
   }
+  
+  console.log('Final budget to insert:', budget);
 
   const descriptionJson = JSON.stringify({ __format: 'charge-v1', ...data });
   const dateVal = data.date || new Date().toISOString().slice(0, 10);
@@ -555,7 +754,8 @@ async function updateCharge(id, data) {
   // NEW: If updating Charges de personnel with personnel array, normalize and recalc first
   if (data.type === 'Charges de personnel' && Array.isArray(data.personnel)) {
     try {
-      const { normalizedPersonnel, recalculatedBudget } = await normalizePersonnelAndBudget(data.personnel, { excludeChargeId: id });
+      const chantierId = data.chantierId || data.chantier_id;
+      const { normalizedPersonnel, recalculatedBudget } = await normalizePersonnelAndBudget(data.personnel, { excludeChargeId: id, chantierId });
       // Override incoming fields with normalized values
       data.personnel = normalizedPersonnel;
       data.budget = recalculatedBudget;
@@ -629,13 +829,17 @@ function mapChargeRow(row) {
     meta = { description: row.description };
   }
   
+  const montantValue = Number(row.montant ?? row.budget ?? meta.budget ?? 0);
+  console.log('mapChargeRow: id =', row.id, 'montant =', row.montant, 'meta.budget =', meta.budget, '=> final budget =', montantValue);
+  
   const base = {
     _id: String(row.id ?? meta._id ?? ""),
     chantierId: String(row.chantier_id ?? meta.chantierId ?? ""),
     type: row.type ?? meta.type ?? "Achat",
     name: meta.name || meta.type || row.type || "Charge",
     customType: row.custom_type || meta.customType,
-    budget: Number(row.montant ?? row.budget ?? meta.budget ?? 0),
+    budget: montantValue,
+    montant: montantValue,
     description:
       typeof meta.description === "string"
         ? meta.description

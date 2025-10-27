@@ -2,9 +2,68 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 
+// Get available years for filtering
+router.get('/years', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT DISTINCT YEAR(ch.dateDebut) as year
+      FROM chantiers ch
+      WHERE ch.dateDebut IS NOT NULL
+      UNION
+      SELECT DISTINCT YEAR(ch.dateFin) as year
+      FROM chantiers ch
+      WHERE ch.dateFin IS NOT NULL
+      UNION
+      SELECT DISTINCT YEAR(ch.dateSaisie) as year
+      FROM chantiers ch
+      WHERE ch.dateSaisie IS NOT NULL
+      ORDER BY year DESC
+    `);
+    
+    const currentYear = new Date().getFullYear();
+    const years = rows.map(row => row.year).filter(year => year);
+    
+    // Add current year if not present
+    if (!years.includes(currentYear)) {
+      years.unshift(currentYear);
+      years.sort((a, b) => b - a);
+    }
+    
+    res.json(years);
+  } catch (error) {
+    console.error('Error getting years:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+});
+
 // Get all plombiers with statistics
 router.get('/', async (req, res) => {
   try {
+    const { filterType, date, month, year } = req.query;
+    
+    // Build date filtering conditions
+    let dateCondition = '';
+    const params = [];
+    
+    if (filterType === 'day' && date) {
+      dateCondition = ` AND (DATE(ch.dateDebut) = ? OR DATE(ch.dateFin) = ? OR DATE(ch.dateSaisie) = ?)`;
+      params.push(date, date, date);
+    } else if (filterType === 'month' && month && year) {
+      dateCondition = ` AND (
+        (YEAR(ch.dateDebut) = ? AND MONTH(ch.dateDebut) = ?) OR
+        (YEAR(ch.dateFin) = ? AND MONTH(ch.dateFin) = ?) OR
+        (YEAR(ch.dateSaisie) = ? AND MONTH(ch.dateSaisie) = ?)
+      )`;
+      params.push(year, month, year, month, year, month);
+    } else if (filterType === 'year' && year) {
+      dateCondition = ` AND (
+        YEAR(ch.dateDebut) = ? OR
+        YEAR(ch.dateFin) = ? OR
+        YEAR(ch.dateSaisie) = ?
+      )`;
+      params.push(year, year, year);
+    }
+
     // First get all charges with personnel data
     const [chargesRows] = await pool.execute(`
       SELECT 
@@ -14,13 +73,17 @@ router.get('/', async (req, res) => {
         c.montant as charge_amount,
         ch.nomChantier,
         ch.prixPrestation as budget,
-        ch.etat
+        ch.etat,
+        ch.dateDebut,
+        ch.dateFin,
+        ch.dateSaisie
       FROM charges c
       JOIN chantiers ch ON c.chantier_id = ch.id
       WHERE c.type = 'Charges de personnel' 
         AND c.personnel_data IS NOT NULL
         AND ch.etat != 'annulé'
-    `);
+        ${dateCondition}
+    `, params);
 
     // Get prestations to identify plombiers
     const [prestations] = await pool.execute('SELECT id, name FROM prestations');
@@ -38,10 +101,12 @@ router.get('/', async (req, res) => {
 
     // Get all charges for each chantier for marge calculation
     const [allCharges] = await pool.execute(`
-      SELECT chantier_id, SUM(montant) as total_charges
-      FROM charges
-      GROUP BY chantier_id
-    `);
+      SELECT ch.id as chantier_id, SUM(c.montant) as total_charges
+      FROM chantiers ch
+      LEFT JOIN charges c ON c.chantier_id = ch.id
+      WHERE ch.etat != 'annulé' ${dateCondition}
+      GROUP BY ch.id
+    `, params);
     const chargesByChantier = {};
     allCharges.forEach(c => {
       chargesByChantier[c.chantier_id] = Number(c.total_charges || 0);
