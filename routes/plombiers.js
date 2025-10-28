@@ -39,7 +39,7 @@ router.get('/years', async (req, res) => {
 // Get all plombiers with statistics
 router.get('/', async (req, res) => {
   try {
-    const { filterType, date, month, year } = req.query;
+    const { filterType, date, month, year, weekStart, weekEnd } = req.query;
     
     // Build date filtering conditions
     let dateCondition = '';
@@ -48,6 +48,13 @@ router.get('/', async (req, res) => {
     if (filterType === 'day' && date) {
       dateCondition = ` AND (DATE(ch.dateDebut) = ? OR DATE(ch.dateFin) = ? OR DATE(ch.dateSaisie) = ?)`;
       params.push(date, date, date);
+    } else if (filterType === 'week' && weekStart && weekEnd) {
+      dateCondition = ` AND (
+        (ch.dateDebut BETWEEN ? AND ?) OR
+        (ch.dateFin BETWEEN ? AND ?) OR
+        (ch.dateSaisie BETWEEN ? AND ?)
+      )`;
+      params.push(weekStart, weekEnd, weekStart, weekEnd, weekStart, weekEnd);
     } else if (filterType === 'month' && month && year) {
       dateCondition = ` AND (
         (YEAR(ch.dateDebut) = ? AND MONTH(ch.dateDebut) = ?) OR
