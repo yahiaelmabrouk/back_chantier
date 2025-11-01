@@ -129,6 +129,8 @@ router.post('/', async (req, res) => {
           montant: autoChargeAmount,
           description: 'Ajout automatique lors de la création du chantier (30% du budget travaux)',
           date: new Date().toISOString().slice(0, 10),
+          // Mark explicitly so detection is robust in future
+          isAutoThirtyPercent: true
         };
         
         console.log('Auto-charge data to create:', autoChargeData);

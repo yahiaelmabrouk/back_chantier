@@ -31,6 +31,10 @@ function mapChargeRow(row) {
         : meta.description || "",
     date: row.date || row.date_creation || meta.date,
     pending: row.pending !== undefined ? row.pending : true,
+    // expose real-vs-provisional flag if present in JSON meta or column
+    isReelle: Boolean(meta.isReelle || row.is_reelle),
+    // explicit marker for the auto-created 30% charge
+    isAutoThirtyPercent: Boolean(meta.isAutoThirtyPercent)
   };
 
   // Load type-specific data
@@ -86,6 +90,13 @@ router.get("/chantier/:id", async (req, res) => {
     const rows = await ChargeModel.getChargesByChantier(req.params.id);
     const mapped =
       Array.isArray(rows) ? rows.map(mapChargeRow).filter(Boolean) : [];
+    // Debug: log isReelle flags
+    console.log('GET /api/charges/chantier/:id - returning', mapped.length, 'charges');
+    mapped.forEach(c => {
+      if (c.type === 'Achat') {
+        console.log(`  Achat: id=${c._id}, name="${c.name}", isReelle=${c.isReelle}, budget=${c.budget}`);
+      }
+    });
     res.json(mapped);
   } catch (err) {
     console.error("GET /api/charges/chantier/:id error", err);
@@ -236,6 +247,109 @@ router.put("/:id", async (req, res) => {
       }
       if (chantier.etat === "fermé") {
         return res.status(403).json({ error: "Charges non modifiables: chantier fermé" });
+      }
+    }
+
+    // Load existing charge to allow special handling for auto 30% charge
+    let existingRaw = null;
+    try {
+      existingRaw = await ChargeModel.getChargeById(id);
+      console.log('🔍 Raw charge from DB:', JSON.stringify(existingRaw, null, 2));
+    } catch (_) {
+      existingRaw = null;
+    }
+    const existing = existingRaw ? mapChargeRow(existingRaw) : null;
+    console.log('🔍 Mapped charge:', JSON.stringify(existing, null, 2));
+
+    console.log('🔍 PUT /charges/:id - Request details:', {
+      id,
+      bodyType: req.body?.type,
+      bodyName: req.body?.name,
+      bodyDescription: req.body?.description,
+      bodyMontant: req.body?.montant,
+      existing: existing ? { id: existing._id, type: existing.type, name: existing.name, description: existing.description } : null
+    });
+
+    // Helper: detect the auto-created 30% charge
+    const isAutoThirtyPercentCharge = (charge) => {
+      if (!charge || charge.type !== "Achat") return false;
+      const name = String(charge.name || "").toLowerCase();
+      const desc = String(charge.description || "").toLowerCase();
+      return (
+        name.includes("30%") ||
+        name.includes("acompte budget") ||
+        desc.includes("30%") ||
+        desc.includes("ajout automatique") ||
+        desc.includes("budget travaux")
+      );
+    };
+
+    // If editing the auto 30% charge: do NOT overwrite it; create a new charge instead
+    // Check both the existing charge AND the incoming payload (in case frontend sends the name)
+    const incomingName = String(req.body?.name || "").toLowerCase();
+    const incomingDesc = String(req.body?.description || "").toLowerCase();
+    const isEditingAuto30 = existing && (
+      isAutoThirtyPercentCharge(existing) ||
+      (req.body?.type === "Achat" && (
+        incomingName.includes("30%") ||
+        incomingName.includes("acompte budget") ||
+        incomingDesc.includes("30%") ||
+        incomingDesc.includes("ajout automatique") ||
+        incomingDesc.includes("budget travaux")
+      ))
+    );
+
+    console.log('🔍 Detection results:', {
+      existingIsAuto30: existing ? isAutoThirtyPercentCharge(existing) : false,
+      incomingMatches: req.body?.type === "Achat" && (
+        incomingName.includes("30%") ||
+        incomingName.includes("acompte budget") ||
+        incomingDesc.includes("30%") ||
+        incomingDesc.includes("ajout automatique") ||
+        incomingDesc.includes("budget travaux")
+      ),
+      isEditingAuto30
+    });
+
+    if (isEditingAuto30) {
+      console.log('🔄 Editing auto 30% charge - will create new charge instead');
+      console.log('  Existing charge:', { id: existing._id, name: existing.name, budget: existing.budget });
+      try {
+        const payload = { ...req.body };
+        const cid = chantierId || payload.chantierId || payload.chantier_id || existing.chantierId;
+        if (!cid) {
+          return res.status(400).json({ error: "chantierId is required" });
+        }
+        // Build creation payload; keep client's intent (type/name/budget/etc.)
+        const toCreate = {
+          ...payload,
+          chantierId: Number(cid),
+          chantier_id: Number(cid),
+          // mark as real (réelles) so UI can filter by mode
+          isReelle: true
+        };
+        console.log('  Setting isReelle=true in new charge payload');
+        // Use budget or montant as montant
+        if (toCreate.budget != null && toCreate.montant == null) {
+          toCreate.montant = Number(toCreate.budget);
+        }
+        // If no explicit name provided, avoid reusing the 30% label to keep it distinct
+        if (!toCreate.name || typeof toCreate.name !== 'string' || !toCreate.name.trim()) {
+          toCreate.name = existing.name && existing.name.toLowerCase().includes('30%')
+            ? 'Achat ajusté'
+            : (existing.name || 'Achat');
+        }
+
+  const created = await ChargeModel.createCharge(toCreate);
+  const mapped = mapChargeRow(created);
+  // Force the response flag to true to keep UI consistent even if DB column is missing
+  if (mapped) mapped.isReelle = true;
+  console.log('  Created new charge:', { id: mapped._id, name: mapped.name, budget: mapped.budget, isReelle: mapped.isReelle });
+        // Return 200 with the newly created charge; the original auto 30% is preserved
+        return res.json(mapped || created);
+      } catch (createErr) {
+        console.error("PUT /api/charges/:id create-on-edit (30%) error", createErr);
+        return res.status(500).json({ error: "Failed to create new charge while preserving 30%" });
       }
     }
 

@@ -262,7 +262,7 @@ async function normalizePersonnelAndBudget(personnel, { excludeChargeId, chantie
         const d1 = toYMD(ch.dateDebut);
         const d2 = toYMD(ch.dateFin);
         const dates = enumerateDatesInclusiveUTC(d1, d2);
-        isLongChantier = dates.length > 7; // duration > 7 days
+        isLongChantier = dates.length > 1; // duration > 1 day
         chantierDates = { start: d1, end: d2 };
         console.log('Chantier dates:', d1, 'to', d2, '=> days:', dates.length, '=> isLongChantier:', isLongChantier);
       }
@@ -478,6 +478,16 @@ async function createCharge(data) {
   
   console.log('Base columns and values:', { cols1, vals1 });
   
+  // Optional: persist real/provisional marker if schema supports it
+  if (typeof data.isReelle !== 'undefined') {
+    try {
+      cols1.push('is_reelle');
+      vals1.push(data.isReelle ? 1 : 0);
+    } catch (e) {
+      console.log('is_reelle column does not exist, skipping');
+    }
+  }
+  
   if (data.type === 'Autre' && data.customType) {
     cols1.push('custom_type');
     vals1.push(data.customType);
@@ -522,6 +532,40 @@ async function createCharge(data) {
   console.log('Final SQL to execute:', sql1);
   console.log('Final values:', vals1);
 
+  // Helper: after insert, persist flags like is_reelle when provided and then refetch
+  async function finalizeCreate(id) {
+    try {
+      if (id && typeof data.isReelle !== 'undefined') {
+        try {
+          await dbRun('UPDATE charges SET is_reelle = ? WHERE id = ?', [data.isReelle ? 1 : 0, id]);
+        } catch (e) {
+          console.warn('Warning: updating is_reelle failed (column may not exist):', e.message);
+        }
+        // Also try to embed the marker into JSON description for compatibility (best-effort)
+        try {
+          const row = await getChargeById(id);
+          let meta = {};
+          try {
+            if (row && typeof row.description === 'string') meta = JSON.parse(row.description);
+            else if (row && row.description && typeof row.description === 'object') meta = row.description;
+          } catch (_) {}
+          const enriched = JSON.stringify({ __format: 'charge-v1', ...meta, isReelle: !!data.isReelle });
+          await dbRun('UPDATE charges SET description = ? WHERE id = ?', [enriched, id]);
+        } catch (e) {
+          console.warn('Warning: embedding isReelle into description failed:', e.message);
+        }
+      }
+    } catch (_) {}
+    // Finally refetch the row to return a consistent object
+    try {
+      const createdCharge = await getChargeById(id);
+      return createdCharge;
+    } catch (e) {
+      console.warn('Could not refetch created charge, returning basic info');
+      return { id, chantierId, type: data.type, montant: budget };
+    }
+  }
+
   try {
     console.log('Attempting to execute SQL...');
     const result = await dbRun(sql1, vals1);
@@ -543,10 +587,8 @@ async function createCharge(data) {
     }
     
     if (id) {
-      console.log('Fetching created charge with ID:', id);
-      const createdCharge = await getChargeById(id);
-      console.log('Retrieved created charge:', createdCharge);
-      return createdCharge;
+      console.log('Fetching created charge with ID (finalize):', id);
+      return await finalizeCreate(id);
     } else {
       console.error('Could not determine inserted charge ID');
       // Return a basic success object if we can't get the ID
@@ -573,9 +615,8 @@ async function createCharge(data) {
       const result2 = await dbRun(sql2, vals2);
       let id2 = result2 && (result2.lastID || result2.insertId || result2.id);
       if (id2) {
-        const createdCharge = await getChargeById(id2);
-        console.log('Fallback (date) created charge:', createdCharge);
-        return createdCharge;
+        console.log('Fallback (date) created charge id:', id2);
+        return await finalizeCreate(id2);
       }
     } catch (e2) {
       console.error('Fallback with "date" failed:', e2.message);
@@ -591,9 +632,8 @@ async function createCharge(data) {
       const result3 = await dbRun(sql3, vals3);
       let id3 = result3 && (result3.lastID || result3.insertId || result3.id);
       if (id3) {
-        const createdCharge = await getChargeById(id3);
-        console.log('Fallback (chantierId,date) created charge:', createdCharge);
-        return createdCharge;
+        console.log('Fallback (chantierId,date) created id:', id3);
+        return await finalizeCreate(id3);
       }
     } catch (e3) {
       console.error('Fallback with "chantierId" failed:', e3.message);
@@ -609,9 +649,8 @@ async function createCharge(data) {
       const result4 = await dbRun(sql4, vals4);
       let id4 = result4 && (result4.lastID || result4.insertId || result4.id);
       if (id4) {
-        const createdCharge = await getChargeById(id4);
-        console.log('Fallback (chantierId,date_creation) created charge:', createdCharge);
-        return createdCharge;
+        console.log('Fallback (chantierId,date_creation) created id:', id4);
+        return await finalizeCreate(id4);
       }
     } catch (e4) {
       console.error('Fallback with "chantierId" and "date_creation" failed:', e4.message);
@@ -626,7 +665,7 @@ async function createCharge(data) {
       const result5 = await dbRun(sql5, vals5);
       let id5 = result5 && (result5.lastID || result5.insertId || result5.id);
       if (id5) {
-        return await getChargeById(id5);
+        return await finalizeCreate(id5);
       }
     } catch (e5) {
       console.error('Minimal insert (date_creation) failed:', e5.message);
@@ -641,7 +680,7 @@ async function createCharge(data) {
       const result6 = await dbRun(sql6, vals6);
       let id6 = result6 && (result6.lastID || result6.insertId || result6.id);
       if (id6) {
-        return await getChargeById(id6);
+        return await finalizeCreate(id6);
       }
     } catch (e6) {
       console.error('Minimal insert (date) failed:', e6.message);
@@ -656,7 +695,7 @@ async function createCharge(data) {
       const result7 = await dbRun(sql7, vals7);
       let id7 = result7 && (result7.lastID || result7.insertId || result7.id);
       if (id7) {
-        return await getChargeById(id7);
+        return await finalizeCreate(id7);
       }
     } catch (e7) {
       console.error('Minimal insert (no date) failed:', e7.message);
@@ -800,6 +839,12 @@ async function updateCharge(id, data) {
     vals.push(data.personnel ? JSON.stringify(data.personnel) : null);
   }
 
+  // Allow toggling real/provisional flag when supported
+  if (typeof data.isReelle !== 'undefined') {
+    sets.push('is_reelle = ?');
+    vals.push(data.isReelle ? 1 : 0);
+  }
+
   // Always persist the full payload in description as JSON for UI mapping
   sets.push('description = ?');
   vals.push(JSON.stringify({ __format: 'charge-v1', ...data }));
@@ -846,6 +891,10 @@ function mapChargeRow(row) {
         : meta.description || "",
     date: row.date_creation || row.date || meta.date,
     pending: row.pending !== undefined ? row.pending : true,
+    // expose real-vs-provisional flag if present in JSON meta or column
+    isReelle: Boolean(meta.isReelle || row.is_reelle),
+    // pass through isAutoThirtyPercent if present in meta
+    isAutoThirtyPercent: Boolean(meta.isAutoThirtyPercent),
   };
 
   // Load type-specific data
