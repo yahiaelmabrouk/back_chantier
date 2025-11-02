@@ -119,10 +119,56 @@ router.get('/', async (req, res) => {
       chargesByChantier[c.chantier_id] = Number(c.total_charges || 0);
     });
 
-    // Process plombiers data
+    // STEP 1: Identify chantiers with 2+ plombiers (these belong to groups ONLY)
+    const plombierCountByChantier = new Map(); // chantier_id => Set of plombier names
+
+    chargesRows.forEach(row => {
+      try {
+        const personnel = JSON.parse(row.personnel_data || '[]');
+        if (!Array.isArray(personnel)) return;
+
+        const plombierNamesOnThisChantier = plombierCountByChantier.get(row.chantier_id) || new Set();
+
+        personnel.forEach(p => {
+          const prestationType = (p.prestationType || '').toLowerCase().trim();
+          const prestationId = p.prestationId;
+          
+          let isPlombier = prestationType === 'plombier';
+          if (!isPlombier && prestationId && prestationsMap[prestationId] === 'plombier') {
+            isPlombier = true;
+          }
+
+          if (isPlombier) {
+            const plombierName = p.nom || 
+                                 (p.salarieId && salariesMap[p.salarieId]) || 
+                                 'Plombier Inconnu';
+            plombierNamesOnThisChantier.add(plombierName);
+          }
+        });
+
+        plombierCountByChantier.set(row.chantier_id, plombierNamesOnThisChantier);
+      } catch (e) {
+        console.error('Error parsing personnel data for group detection:', e);
+      }
+    });
+
+    // Build set of chantier IDs that have 2+ plombiers (grouped chantiers)
+    const groupedChantierIds = new Set();
+    plombierCountByChantier.forEach((plombierSet, chantierId) => {
+      if (plombierSet.size >= 2) {
+        groupedChantierIds.add(chantierId);
+      }
+    });
+
+    // STEP 2: Process plombiers data, EXCLUDING grouped chantiers
     const plombiersMap = new Map();
 
     chargesRows.forEach(row => {
+      // Skip chantiers that belong to a group (2+ plombiers)
+      if (groupedChantierIds.has(row.chantier_id)) {
+        return;
+      }
+
       try {
         const personnel = JSON.parse(row.personnel_data || '[]');
         if (!Array.isArray(personnel)) return;
@@ -154,7 +200,7 @@ router.get('/', async (req, res) => {
 
             const plombierData = plombiersMap.get(plombierName);
             
-            // Add chantier if not already counted
+            // Add chantier if not already counted (and it's a solo chantier)
             if (!plombierData.chantiers.has(row.chantier_id)) {
               plombierData.chantiers.add(row.chantier_id);
               plombierData.totalBudget += Number(row.budget || 0);
