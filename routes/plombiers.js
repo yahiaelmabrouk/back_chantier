@@ -2,21 +2,13 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 
-// Get available years for filtering
+// Get available years for filtering (based on dateDebut)
 router.get('/years', async (req, res) => {
   try {
     const [rows] = await pool.execute(`
       SELECT DISTINCT YEAR(ch.dateDebut) as year
       FROM chantiers ch
       WHERE ch.dateDebut IS NOT NULL
-      UNION
-      SELECT DISTINCT YEAR(ch.dateFin) as year
-      FROM chantiers ch
-      WHERE ch.dateFin IS NOT NULL
-      UNION
-      SELECT DISTINCT YEAR(ch.dateSaisie) as year
-      FROM chantiers ch
-      WHERE ch.dateSaisie IS NOT NULL
       ORDER BY year DESC
     `);
     
@@ -41,34 +33,22 @@ router.get('/', async (req, res) => {
   try {
     const { filterType, date, month, year, weekStart, weekEnd } = req.query;
     
-    // Build date filtering conditions
+    // Build date filtering conditions based on dateDebut (chantier start date)
     let dateCondition = '';
     const params = [];
     
     if (filterType === 'day' && date) {
-      dateCondition = ` AND (DATE(ch.dateDebut) = ? OR DATE(ch.dateFin) = ? OR DATE(ch.dateSaisie) = ?)`;
-      params.push(date, date, date);
+      dateCondition = ` AND DATE(ch.dateDebut) = ?`;
+      params.push(date);
     } else if (filterType === 'week' && weekStart && weekEnd) {
-      dateCondition = ` AND (
-        (ch.dateDebut BETWEEN ? AND ?) OR
-        (ch.dateFin BETWEEN ? AND ?) OR
-        (ch.dateSaisie BETWEEN ? AND ?)
-      )`;
-      params.push(weekStart, weekEnd, weekStart, weekEnd, weekStart, weekEnd);
+      dateCondition = ` AND ch.dateDebut BETWEEN ? AND ?`;
+      params.push(weekStart, weekEnd);
     } else if (filterType === 'month' && month && year) {
-      dateCondition = ` AND (
-        (YEAR(ch.dateDebut) = ? AND MONTH(ch.dateDebut) = ?) OR
-        (YEAR(ch.dateFin) = ? AND MONTH(ch.dateFin) = ?) OR
-        (YEAR(ch.dateSaisie) = ? AND MONTH(ch.dateSaisie) = ?)
-      )`;
-      params.push(year, month, year, month, year, month);
+      dateCondition = ` AND YEAR(ch.dateDebut) = ? AND MONTH(ch.dateDebut) = ?`;
+      params.push(year, month);
     } else if (filterType === 'year' && year) {
-      dateCondition = ` AND (
-        YEAR(ch.dateDebut) = ? OR
-        YEAR(ch.dateFin) = ? OR
-        YEAR(ch.dateSaisie) = ?
-      )`;
-      params.push(year, year, year);
+      dateCondition = ` AND YEAR(ch.dateDebut) = ?`;
+      params.push(year);
     }
 
     // First get all charges with personnel data
@@ -237,34 +217,22 @@ router.get('/groups', async (req, res) => {
   try {
     const { filterType, date, month, year, weekStart, weekEnd } = req.query;
 
-    // Build date filtering conditions (reuse logic from singles endpoint)
+    // Build date filtering conditions based on dateDebut (chantier start date)
     let dateCondition = '';
     const params = [];
 
     if (filterType === 'day' && date) {
-      dateCondition = ` AND (DATE(ch.dateDebut) = ? OR DATE(ch.dateFin) = ? OR DATE(ch.dateSaisie) = ?)`;
-      params.push(date, date, date);
+      dateCondition = ` AND DATE(ch.dateDebut) = ?`;
+      params.push(date);
     } else if (filterType === 'week' && weekStart && weekEnd) {
-      dateCondition = ` AND (
-        (ch.dateDebut BETWEEN ? AND ?) OR
-        (ch.dateFin BETWEEN ? AND ?) OR
-        (ch.dateSaisie BETWEEN ? AND ?)
-      )`;
-      params.push(weekStart, weekEnd, weekStart, weekEnd, weekStart, weekEnd);
+      dateCondition = ` AND ch.dateDebut BETWEEN ? AND ?`;
+      params.push(weekStart, weekEnd);
     } else if (filterType === 'month' && month && year) {
-      dateCondition = ` AND (
-        (YEAR(ch.dateDebut) = ? AND MONTH(ch.dateDebut) = ?) OR
-        (YEAR(ch.dateFin) = ? AND MONTH(ch.dateFin) = ?) OR
-        (YEAR(ch.dateSaisie) = ? AND MONTH(ch.dateSaisie) = ?)
-      )`;
-      params.push(year, month, year, month, year, month);
+      dateCondition = ` AND YEAR(ch.dateDebut) = ? AND MONTH(ch.dateDebut) = ?`;
+      params.push(year, month);
     } else if (filterType === 'year' && year) {
-      dateCondition = ` AND (
-        YEAR(ch.dateDebut) = ? OR
-        YEAR(ch.dateFin) = ? OR
-        YEAR(ch.dateSaisie) = ?
-      )`;
-      params.push(year, year, year);
+      dateCondition = ` AND YEAR(ch.dateDebut) = ?`;
+      params.push(year);
     }
 
     // Pull personnel charges joined to chantier info (budget)
