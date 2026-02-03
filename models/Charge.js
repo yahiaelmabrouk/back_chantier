@@ -243,6 +243,22 @@ async function normalizePersonnelAndBudget(personnel, { excludeChargeId, chantie
   const firstMap = await buildFirstChargeIdMapForDates(targetDates, excludeChargeId);
   let recalculatedBudget = 0;
 
+  // Fetch all salarie taux_horaire from database for accuracy
+  const salarieRates = new Map();
+  const salarieIds = [...new Set((personnel || []).filter(p => !p?.isTransportFee).map(p => String(p?.salarieId || '')).filter(Boolean))];
+  if (salarieIds.length > 0) {
+    try {
+      const placeholders = salarieIds.map(() => '?').join(',');
+      const rows = await dbQuery(`SELECT id, taux_horaire FROM salaries WHERE id IN (${placeholders})`, salarieIds);
+      for (const row of rows || []) {
+        salarieRates.set(String(row.id), Number(row.taux_horaire || 0));
+      }
+      console.log('Fetched taux_horaire for', salarieRates.size, 'salaries from database');
+    } catch (err) {
+      console.error('Error fetching salarie rates:', err);
+    }
+  }
+
   // Determine chantier duration for long/short mode
   let isLongChantier = false;
   let chantierDates = { start: null, end: null };
@@ -356,10 +372,11 @@ async function normalizePersonnelAndBudget(personnel, { excludeChargeId, chantie
       total = 140 * days;
       console.log('Long chantier: counted', days, 'working days => total =', total);
     } else {
-      const tx = Number(p?.tauxHoraire || 0);
+      // Use taux_horaire from database if available, otherwise fallback to entry data
+      const tx = salarieRates.get(salarieId) ?? Number(p?.tauxHoraire || 0);
       const billedDays = billedDaysCount(newDates);
       total = tx * (billedDays * 7);
-      console.log('Short chantier: tx =', tx, 'billedDays =', billedDays, '=> total =', total);
+      console.log('Short chantier: tx =', tx, '(from DB:', salarieRates.has(salarieId), '), billedDays =', billedDays, '=> total =', total);
     }
 
     const realHours = isLongChantier ? 0 : (p?.dates || []).reduce((sum, d) => {
