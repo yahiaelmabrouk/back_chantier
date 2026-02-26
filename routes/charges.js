@@ -80,6 +80,12 @@ function mapChargeRow(row) {
     } catch (e) {
       base.pieces = Array.isArray(meta.pieces) ? meta.pieces : [];
     }
+    // Load achat line items (new detailed table)
+    try {
+      base.achatLignes = row.achat_data ? JSON.parse(row.achat_data) : (Array.isArray(meta.achatLignes) ? meta.achatLignes : []);
+    } catch (e) {
+      base.achatLignes = Array.isArray(meta.achatLignes) ? meta.achatLignes : [];
+    }
   }
   return base;
 }
@@ -134,6 +140,11 @@ router.post("/", async (req, res) => {
       chantier_id: chantierId,
       montant: budget,
     };
+
+    // Persist achat line items if provided
+    if (payload.type === "Achat" && Array.isArray(payload.achatLignes)) {
+      toCreate.achatLignes = payload.achatLignes;
+    }
 
     // Ensure personnel entries are persisted properly
     if (payload.type === "Charges de personnel" && Array.isArray(payload.personnel)) {

@@ -471,9 +471,19 @@ async function createCharge(data) {
   let interimData = null;
   // personnelData already prepared above if applicable
 
+  let achatData = null;
+
   switch (data.type) {
     case 'Achat':
       piecesData = data.pieces ? JSON.stringify(data.pieces) : null;
+      // Prepare achat line items for later insertion (after cols1/vals1 are defined)
+      if (Array.isArray(data.achatLignes) && data.achatLignes.length > 0) {
+        try {
+          achatData = JSON.stringify(data.achatLignes);
+        } catch (e) {
+          console.log('Error serializing achat_data:', e.message);
+        }
+      }
       break;
     case 'Services extérieurs':
       // Ensure details is properly serialized
@@ -541,6 +551,14 @@ async function createCharge(data) {
       vals1.push(personnelData);
     } catch (e) {
       console.log('personnel_data column does not exist, skipping');
+    }
+  }
+  if (achatData && cols1.indexOf('achat_data') === -1) {
+    try {
+      cols1.push('achat_data');
+      vals1.push(achatData);
+    } catch (e) {
+      console.log('achat_data column does not exist, skipping');
     }
   }
 
@@ -851,6 +869,10 @@ async function updateCharge(id, data) {
     sets.push('interim_data = ?');
     vals.push(data.ouvriers ? JSON.stringify(data.ouvriers) : null);
   }
+  if (data.achatLignes !== undefined) {
+    sets.push('achat_data = ?');
+    vals.push(data.achatLignes ? JSON.stringify(data.achatLignes) : null);
+  }
   if (data.personnel !== undefined) {
     sets.push('personnel_data = ?');
     vals.push(data.personnel ? JSON.stringify(data.personnel) : null);
@@ -941,6 +963,12 @@ function mapChargeRow(row) {
       base.pieces = row.pieces_data ? JSON.parse(row.pieces_data) : (Array.isArray(meta.pieces) ? meta.pieces : []);
     } catch (e) {
       base.pieces = Array.isArray(meta.pieces) ? meta.pieces : [];
+    }
+    // Load achat line items
+    try {
+      base.achatLignes = row.achat_data ? JSON.parse(row.achat_data) : (Array.isArray(meta.achatLignes) ? meta.achatLignes : []);
+    } catch (e) {
+      base.achatLignes = Array.isArray(meta.achatLignes) ? meta.achatLignes : [];
     }
   }
   return base;
