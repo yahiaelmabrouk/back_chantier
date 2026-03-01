@@ -86,17 +86,38 @@ router.get('/', async (req, res) => {
       salariesMap[s.id] = s.nom;
     });
 
-    // Get all charges for each chantier for marge calculation
-    const [allCharges] = await pool.execute(`
-      SELECT ch.id as chantier_id, SUM(c.montant) as total_charges
-      FROM chantiers ch
-      LEFT JOIN charges c ON c.chantier_id = ch.id
+    // Get all charges réelles for each chantier for marge calculation
+    // Fetch every charge row individually so we can detect the auto-30% provisoire in JS
+    const [allChargeRows] = await pool.execute(`
+      SELECT c.chantier_id, c.type, c.montant, c.isReelle, c.description
+      FROM charges c
+      JOIN chantiers ch ON c.chantier_id = ch.id
       WHERE ch.etat != 'annulé' ${dateCondition}
-      GROUP BY ch.id
     `, params);
+
+    // Helper: detect the auto-created provisional 30% Achat charge
+    function isProvisionalAuto30(row) {
+      if (row.type !== 'Achat') return false;
+      if (Number(row.isReelle) === 1) return false; // réelle charges are kept
+      let meta = {};
+      try { meta = JSON.parse(row.description || '{}'); } catch(e) { meta = {}; }
+      if (meta.isAutoThirtyPercent === true) return true;
+      const name = String(meta.name || '').toLowerCase();
+      const desc = String(meta.description || '').toLowerCase();
+      return (
+        name.includes('30%') ||
+        name.includes('acompte budget') ||
+        desc.includes('30%') ||
+        desc.includes('ajout automatique') ||
+        desc.includes('budget travaux')
+      );
+    }
+
     const chargesByChantier = {};
-    allCharges.forEach(c => {
-      chargesByChantier[c.chantier_id] = Number(c.total_charges || 0);
+    allChargeRows.forEach(row => {
+      if (isProvisionalAuto30(row)) return; // skip provisional 30%
+      const id = row.chantier_id;
+      chargesByChantier[id] = (chargesByChantier[id] || 0) + Number(row.montant || 0);
     });
 
     // STEP 1: Identify chantiers with 2+ plombiers (these belong to groups ONLY)
@@ -268,17 +289,38 @@ router.get('/groups', async (req, res) => {
       salariesMap[s.id] = s.nom;
     });
 
-    // All charges per chantier to compute margin
-    const [allCharges] = await pool.execute(`
-      SELECT ch.id as chantier_id, SUM(c.montant) as total_charges
-      FROM chantiers ch
-      LEFT JOIN charges c ON c.chantier_id = ch.id
+    // All charges réelles per chantier to compute margin
+    // Fetch every charge row individually so we can detect the auto-30% provisoire in JS
+    const [allChargeRows] = await pool.execute(`
+      SELECT c.chantier_id, c.type, c.montant, c.isReelle, c.description
+      FROM charges c
+      JOIN chantiers ch ON c.chantier_id = ch.id
       WHERE ch.etat != 'annulé' ${dateCondition}
-      GROUP BY ch.id
     `, params);
+
+    // Helper: detect the auto-created provisional 30% Achat charge
+    function isProvisionalAuto30(row) {
+      if (row.type !== 'Achat') return false;
+      if (Number(row.isReelle) === 1) return false; // réelle charges are kept
+      let meta = {};
+      try { meta = JSON.parse(row.description || '{}'); } catch(e) { meta = {}; }
+      if (meta.isAutoThirtyPercent === true) return true;
+      const name = String(meta.name || '').toLowerCase();
+      const desc = String(meta.description || '').toLowerCase();
+      return (
+        name.includes('30%') ||
+        name.includes('acompte budget') ||
+        desc.includes('30%') ||
+        desc.includes('ajout automatique') ||
+        desc.includes('budget travaux')
+      );
+    }
+
     const chargesByChantier = {};
-    allCharges.forEach(c => {
-      chargesByChantier[c.chantier_id] = Number(c.total_charges || 0);
+    allChargeRows.forEach(row => {
+      if (isProvisionalAuto30(row)) return; // skip provisional 30%
+      const id = row.chantier_id;
+      chargesByChantier[id] = (chargesByChantier[id] || 0) + Number(row.montant || 0);
     });
 
     // Step 1: Build unique plumber sets per chantier (merge across multiple charges rows for the same chantier)
