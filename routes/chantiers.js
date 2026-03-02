@@ -88,7 +88,8 @@ router.post('/', async (req, res) => {
       dateFin: req.body.dateFin || null,
       dateSaisie: req.body.dateSaisie || new Date().toISOString().split('T')[0],
       etat: req.body.etat || 'en cours',
-      numBonFacture: req.body.numBonFacture || null
+      numBonFacture: req.body.numBonFacture || null,
+      sousEtat: req.body.sousEtat || null
     };
     
     // NEW: enforce "annulé" rule (etat and zero budget)
@@ -207,7 +208,7 @@ router.put('/:id', async (req, res) => {
 
     // Normalize fields if present in payload (exclude numAttachement/numeroCommande from auto-null)
     const toNullIfEmpty = (v) => (v === '' ? null : v);
-    ['adresseExecution','lieu','dateDebut','dateFin','dateSaisie','numBonFacture'].forEach((k) => {
+    ['adresseExecution','lieu','dateDebut','dateFin','dateSaisie','numBonFacture','sousEtat'].forEach((k) => {
       if (k in req.body) merged[k] = toNullIfEmpty(req.body[k]);
     });
 
