@@ -85,6 +85,13 @@ try {
   console.error('❌ Plombier routes failed:', error.message);
 }
 
+try {
+  app.use('/api/prestation-stats', require('./routes/prestation-stats'));
+  console.log('✅ Prestation Stats routes loaded');
+} catch (error) {
+  console.error('❌ Prestation Stats routes failed:', error.message);
+}
+
 // Optional routes - Remove login from here since we already loaded it
 const optionalRoutes = [
   { path: '/api/salaries', file: './routes/salaries', name: 'Salaries' },
