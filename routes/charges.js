@@ -4,6 +4,25 @@ const ChargeModel = require("../models/Charge");
 const FraisTransportConfig = require("../models/FraisTransportConfig"); // Import the transport config model
 const Chantier = require("../models/Chantier");
 const { pool } = require("../config/database");
+const fournisseurService = require("../services/fournisseurService");
+
+async function syncFournisseurBudgetsSafe() {
+  try {
+    await fournisseurService.syncBudgets();
+  } catch (err) {
+    console.warn("Fournisseur budget sync skipped:", err.message);
+  }
+}
+
+async function prepareAchatLignes(lignes) {
+  if (!Array.isArray(lignes)) return lignes;
+  try {
+    return await fournisseurService.enrichAchatLignes(lignes);
+  } catch (err) {
+    console.warn("Could not enrich achat lignes:", err.message);
+    return lignes;
+  }
+}
 
 function mapChargeRow(row) {
   if (!row) return null;
@@ -143,7 +162,7 @@ router.post("/", async (req, res) => {
 
     // Persist achat line items if provided
     if (payload.type === "Achat" && Array.isArray(payload.achatLignes)) {
-      toCreate.achatLignes = payload.achatLignes;
+      toCreate.achatLignes = await prepareAchatLignes(payload.achatLignes);
     }
 
     // Ensure personnel entries are persisted properly
@@ -224,6 +243,10 @@ router.post("/", async (req, res) => {
           mapped.budget = recalculated;
         }
       }
+    }
+
+    if (payload.type === "Achat") {
+      await syncFournisseurBudgetsSafe();
     }
 
     res.status(201).json(mapped || createdRow);
@@ -340,6 +363,9 @@ router.put("/:id", async (req, res) => {
           isReelle: true
         };
         console.log('  Setting isReelle=true in new charge payload');
+        if (toCreate.type === "Achat" && Array.isArray(toCreate.achatLignes)) {
+          toCreate.achatLignes = await prepareAchatLignes(toCreate.achatLignes);
+        }
         // Use budget or montant as montant
         if (toCreate.budget != null && toCreate.montant == null) {
           toCreate.montant = Number(toCreate.budget);
@@ -357,6 +383,9 @@ router.put("/:id", async (req, res) => {
   if (mapped) mapped.isReelle = true;
   console.log('  Created new charge:', { id: mapped._id, name: mapped.name, budget: mapped.budget, isReelle: mapped.isReelle });
         // Return 200 with the newly created charge; the original auto 30% is preserved
+        if (toCreate.type === "Achat") {
+          await syncFournisseurBudgetsSafe();
+        }
         return res.json(mapped || created);
       } catch (createErr) {
         console.error("PUT /api/charges/:id create-on-edit (30%) error", createErr);
@@ -373,9 +402,15 @@ router.put("/:id", async (req, res) => {
         body.personnel_data = JSON.stringify([]);
       }
     }
+    if (body.type === "Achat" && Array.isArray(body.achatLignes)) {
+      body.achatLignes = await prepareAchatLignes(body.achatLignes);
+    }
 
     const updated = await ChargeModel.updateCharge(id, body);
     const mapped = mapChargeRow(updated);
+    if (body.type === "Achat" || existing?.type === "Achat") {
+      await syncFournisseurBudgetsSafe();
+    }
     res.json(mapped || updated);
   } catch (err) {
     console.error("PUT /api/charges/:id error", err);
@@ -386,6 +421,7 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     await ChargeModel.deleteCharge(req.params.id);
+    await syncFournisseurBudgetsSafe();
     res.status(204).end();
   } catch (err) {
     console.error("DELETE /api/charges/:id error", err);

@@ -29,7 +29,7 @@ class Fournisseur {
       
       const [result] = await pool.query(query, [
         fournisseurData.name,
-        fournisseurData.budget || 0
+        0
       ]);
       
       return { id: result.insertId, ...fournisseurData };
