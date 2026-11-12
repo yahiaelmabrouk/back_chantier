@@ -900,6 +900,15 @@ async function deleteCharge(id) {
   return { success: true };
 }
 
+async function deleteCharges(ids) {
+  const clean = [...new Set((ids || []).map((i) => String(i).trim()).filter((i) => /^\d+$/.test(i)))];
+  if (clean.length === 0) return { success: true, deleted: 0 };
+  const placeholders = clean.map(() => '?').join(',');
+  const result = await dbRun(`DELETE FROM charges WHERE id IN (${placeholders})`, clean);
+  const deleted = (result && (result.affectedRows ?? result.changes)) ?? clean.length;
+  return { success: true, deleted };
+}
+
 function mapChargeRow(row) {
   if (!row) return null;
   let meta = {};
@@ -980,5 +989,6 @@ module.exports = {
   getChargeById,
   updateCharge,
   deleteCharge,
+  deleteCharges,
   mapChargeRow,
 };

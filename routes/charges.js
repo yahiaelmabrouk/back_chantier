@@ -418,6 +418,22 @@ router.put("/:id", async (req, res) => {
   }
 })  ;
 
+// Bulk delete: POST /api/charges/bulk-delete { ids: [..] }
+router.post("/bulk-delete", async (req, res) => {
+  try {
+    const ids = req.body && req.body.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "ids must be a non-empty array" });
+    }
+    const result = await ChargeModel.deleteCharges(ids);
+    await syncFournisseurBudgetsSafe();
+    res.json(result);
+  } catch (err) {
+    console.error("POST /api/charges/bulk-delete error", err);
+    res.status(500).json({ error: "Failed to delete charges" });
+  }
+});
+
 router.delete("/:id", async (req, res) => {
   try {
     await ChargeModel.deleteCharge(req.params.id);
