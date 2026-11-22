@@ -12,7 +12,7 @@ router.get('*', (req, res) => {
   res.status(200).json({ message: 'Login API is running' });
 });
 
-// Fallback login to keep admin/wissem working post-migration
+// Fallback login to keep the hardcoded admin account working post-migration
 async function handleLogin(req, res, next) {
   try {
     console.log('Login handler reached with body:', req.body);
@@ -22,7 +22,7 @@ async function handleLogin(req, res, next) {
     }
 
     // Fallback credentials to unblock access if DB user seeding is missing
-    if (username === 'admin' && password === 'wissem') {
+    if (username === 'admin' && password === 'adminGESTION2027') {
       console.log('Admin credentials matched, returning token');
       return res.status(200).json({
         token: 'dev-admin',
